@@ -1,0 +1,155 @@
+{
+  "workflow_id": "bead-spring-rg-2026-03-31",
+  "version": 1,
+  "created": "2026-03-31T00:00:00Z",
+  "updated": "2026-03-31T00:00:00Z",
+  "experiment_design": "../docs/superscientist/specs/2026-03-31-bead-spring-rg-design.md",
+  "workflow_plan": "../docs/superscientist/plans/2026-03-31-bead-spring-rg.md",
+  "amendments": [],
+  "default_backend": "local",
+  "backend_profiles": {
+    "local": {
+      "type": "local",
+      "config": {
+        "batch_type": "Shell",
+        "context_type": "LocalContext"
+      }
+    }
+  },
+  "stages": [
+    {
+      "id": "stage-1",
+      "name": "Structure Generation",
+      "status": "pending",
+      "depends_on": [],
+      "backend": null,
+      "inputs": ["../docs/superscientist/specs/2026-03-31-bead-spring-rg-design.md"],
+      "outputs": ["stage-1/autopoly_config.json", "stage-1/data.polymer"],
+      "parameters": {
+        "software": "AutoPoly",
+        "chain_num": 1,
+        "n_beads": 30,
+        "box_size": 50.0,
+        "model": "bead-spring CG",
+        "pair_style": "WCA",
+        "bond_style": "FENE"
+      },
+      "success_criteria": "stage-1/data.polymer contains exactly 30 atoms and 29 bonds; no bond length exceeds R0=1.5 sigma",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    },
+    {
+      "id": "stage-2",
+      "name": "Energy Minimization",
+      "status": "pending",
+      "depends_on": ["stage-1"],
+      "backend": null,
+      "inputs": ["stage-1/data.polymer"],
+      "outputs": ["stage-2/in.minimize", "stage-2/log.minimize", "stage-2/restart.minimize"],
+      "parameters": {
+        "software": "LAMMPS",
+        "units": "lj",
+        "pair_style": "lj/cut",
+        "pair_cutoff": 1.122,
+        "pair_shift": true,
+        "bond_style": "fene",
+        "K_fene": 30.0,
+        "R0_fene": 1.5,
+        "epsilon": 1.0,
+        "sigma": 1.0,
+        "minimizer": "cg",
+        "etol": 1e-6,
+        "ftol": 1e-6,
+        "max_steps": 10000
+      },
+      "success_criteria": "Minimization completes; max force per atom < 10 epsilon/sigma; all bond lengths < 1.4 sigma in restart file",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    },
+    {
+      "id": "stage-3",
+      "name": "NVT Equilibration",
+      "status": "pending",
+      "depends_on": ["stage-2"],
+      "backend": null,
+      "inputs": ["stage-2/restart.minimize", "stage-1/data.polymer"],
+      "outputs": ["stage-3/in.equil", "stage-3/log.equil", "stage-3/restart.equil"],
+      "parameters": {
+        "software": "LAMMPS",
+        "units": "lj",
+        "ensemble": "NVT",
+        "temperature": 1.0,
+        "thermostat": "Nose-Hoover",
+        "tdamp": 0.5,
+        "timestep": 0.005,
+        "nsteps": 1000000,
+        "thermo_freq": 1000,
+        "compute_gyration": true
+      },
+      "success_criteria": "Potential energy drift < 1% over last 20% of run; Rg time series in log.equil shows no systematic trend",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    },
+    {
+      "id": "stage-4",
+      "name": "NVT Production",
+      "status": "pending",
+      "depends_on": ["stage-3"],
+      "backend": null,
+      "inputs": ["stage-3/restart.equil"],
+      "outputs": ["stage-4/in.production", "stage-4/log.production"],
+      "parameters": {
+        "software": "LAMMPS",
+        "units": "lj",
+        "ensemble": "NVT",
+        "temperature": 1.0,
+        "thermostat": "Nose-Hoover",
+        "tdamp": 0.5,
+        "timestep": 0.005,
+        "nsteps": 5000000,
+        "thermo_freq": 1000,
+        "compute_gyration": true,
+        "n_samples": 5000
+      },
+      "success_criteria": "Block-averaged Rg converges across 5 equal blocks with block-to-block variation < 5% of mean; std error < 0.1 sigma",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    },
+    {
+      "id": "stage-5",
+      "name": "Analysis",
+      "status": "pending",
+      "depends_on": ["stage-4"],
+      "backend": null,
+      "inputs": ["stage-4/log.production"],
+      "outputs": ["stage-5/analyze_rg.py", "stage-5/rg_result.png", "stage-5/rg_result.txt"],
+      "parameters": {
+        "software": "Python",
+        "libraries": ["numpy", "matplotlib"],
+        "burnin_fraction": 0.2,
+        "n_blocks": 5,
+        "expected_rg_min": 2.8,
+        "expected_rg_max": 3.2,
+        "target_std_error": 0.1
+      },
+      "success_criteria": "mean Rg in [2.8, 3.2] sigma; standard error < 0.1 sigma; block averages mutually consistent within 1 std error",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    }
+  ]
+}
