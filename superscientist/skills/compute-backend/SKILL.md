@@ -276,6 +276,46 @@ All paths in `forward_files` and `backward_files` are **relative to `task_work_p
 - **DPDispatcher polls internally** every 30 s in blocking mode. The tmux session keeps this alive across session boundaries.
 - **Recovery:** If tmux dies without `DPDISP_DONE`, re-launch `dpdisp-run.sh` in a new tmux session. DPDispatcher's idempotent recovery resumes monitoring without re-submitting.
 
+## Diagnostic Reproduction Run
+
+When an HPC stage fails and DPDispatcher aborts the `backward_files` download (because a required output file doesn't exist on the remote), the orchestrator may dispatch a **diagnostic reproduction run** to obtain error logs.
+
+**Key constraint:** This is a NEW job execution, not a file transfer. DPDispatcher creates a content-hashed remote directory per submission — it cannot access files from a previous job's directory. The reproduction run re-executes the command. This means:
+- It consumes an HPC allocation
+- It only works if the failure reproduces (configuration errors like missing packages, wrong flags, resource mismatches always reproduce)
+- For intermittent failures, `dpdispatcher.log` (Level 1 diagnostics) may be the only option
+
+**When the orchestrator prompt says "This is a diagnostic run":**
+
+1. Write `stage-{id}/submission.diagnostic.json` — NOT `submission.json`. The original `submission.json` is preserved for the real fix retry.
+2. Use the same `command` and `forward_files` as the original `submission.json`.
+3. Set `backward_files` to `["log", "err"]` only — no output files that might be missing.
+4. Validate and submit `submission.diagnostic.json` using the same steps (dargs check → dry-run → submit).
+5. For the wrapper script, reference the diagnostic file:
+   ```bash
+   uvx --from dpdispatcher dpdisp submit [--allow-ref] stage-{id}/submission.diagnostic.json
+   ```
+6. After the diagnostic run completes, leave `submission.diagnostic.json` in place for debugging reference.
+
+## Retry Modes
+
+When `retry_count > 0`, the orchestrator prompt specifies one of two modes:
+
+**Reuse mode** (default for retries after script-level fixes):
+1. Check that `stage-{id}/submission.json` exists.
+2. Validate and dry-run it (the fix was to the input script, not the submission configuration).
+3. Submit the existing `submission.json` as-is.
+4. Do NOT regenerate submission.json from scratch.
+
+**Regenerate mode** (when the fix changes submission parameters):
+1. Rebuild `submission.json` from the stage's updated `parameters` and `resource_overrides`.
+2. Validate and dry-run.
+3. Submit the new `submission.json`.
+
+The orchestrator chooses the mode based on the nature of the fix:
+- Input script fix (e.g., remove `-sf gpu` from LAMMPS command) → **reuse**
+- Submission parameter fix (e.g., change `gpu_per_node`, add `custom_flags`) → **regenerate**
+
 ## Security Guardrails
 
 - **NEVER read external `$ref` config files** — they contain credentials
@@ -301,3 +341,6 @@ All paths in `forward_files` and `backward_files` are **relative to `task_work_p
 | "I'll run it directly first to test, then use DPDispatcher for real" | **NEVER run directly.** Validate with `dargs check` and `--dry-run`. That is sufficient. |
 | "I'll just `bash` the run script I wrote" | Only valid script to run is `dpdisp-run.sh` inside tmux. Never bash the simulation script directly. |
 | "The submission.json is ready, but dpdisp seems broken — I'll just run the command" | Stop and debug DPDispatcher. Do not bypass it. Report the failure to the orchestrator. |
+| "I'll overwrite submission.json for the diagnostic run" | Write `submission.diagnostic.json`. The original is needed for the fix retry. |
+| "Let me regenerate submission.json for the retry" | Check the orchestrator prompt: reuse or regenerate? Reuse is the default. |
+| "custom_flags don't need #SBATCH" | DPDispatcher inserts them verbatim. Missing prefix = silently ignored by scheduler. |
