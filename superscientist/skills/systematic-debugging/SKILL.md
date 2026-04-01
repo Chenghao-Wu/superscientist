@@ -54,6 +54,36 @@ NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 4. Retry the stage via `superscientist:executing-workflows`
 5. `retry_count` is incremented in `workflow-state.json`
 
+## DPDispatcher Failures (HPC Stages)
+
+When an HPC stage fails (any stage using a remote backend profile), always start with `dpdispatcher.log` — it is available locally without any download.
+
+### Step 1: Read `dpdispatcher.log`
+
+```bash
+cat {workflow_root}/dpdispatcher.log
+```
+
+Extract for the failed stage's submission:
+- **Job IDs:** Slurm/PBS job IDs (e.g., `job_id: 23085`)
+- **Status:** `terminated` (non-zero Slurm exit) or `finished` (exit 0 but DPDispatcher found issues)
+- **`fail_count`:** Number of times DPDispatcher internally retried the job
+- **Remote path:** The hash-based remote working directory (e.g., `959691370546a346be2a4770ce9b93789f42ce6a`)
+
+### Step 2: Classify the failure
+
+| DPDispatcher status | Meaning | Root cause category | Next step |
+|---|---|---|---|
+| `terminated` | Scheduler killed the job | Scheduler/resource error: wrong partition, OOM, walltime exceeded, invalid GPU request, duplicate `--gres` | Fix `resources` or `custom_flags` in submission parameters |
+| `finished` + backward_files missing | Job ran to completion but expected outputs not created | Command-level error: wrong input script, missing software package, wrong binary path | Read `stage-N/log` and `stage-N/err` if downloaded; if not, request Level 2 diagnostic reproduction run from orchestrator |
+| DPDispatcher error (Python traceback) | DPDispatcher itself failed | SSH/network issue, `remote_root` misconfigured, `$ref` config invalid | Check machine config path, network connectivity; retry |
+
+### Step 3: Check for `custom_flags` issues
+
+If the job was `terminated` by the scheduler, check `dpdispatcher.log` or the original `submission.json` for common `custom_flags` problems:
+- **Missing `#SBATCH` prefix:** Entries like `"--qos=4gpus"` instead of `"#SBATCH --qos=4gpus"` are silently ignored by Slurm. They appear as bare shell lines in the `.sub` script.
+- **Duplicate directives:** `gpu_per_node: 1` auto-generates `#SBATCH --gres=gpu:1`. Adding `"#SBATCH --gres=gpu:1"` to `custom_flags` creates a duplicate that some schedulers reject.
+
 ## Wrong Results: The Hardest Category
 
 When the calculation converges and files look correct, but the answer is physically wrong:
@@ -71,3 +101,4 @@ When the calculation converges and files look correct, but the answer is physica
 | "Quick fix, let me try" | Root cause first. Phase 1 → 2 → 3 → 4. |
 | "Let me try one more fix" (after 2+) | Stop. Question the approach. Talk to user. |
 | "Results look close enough" | Check against reference. "Close" might be wrong. |
+| "The error is in the simulation code" (HPC stage) | Read `dpdispatcher.log` first. The failure may be scheduler-level, not code-level. |
