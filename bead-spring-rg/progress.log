@@ -1,18 +1,22 @@
-[2026-04-01 00:00] Workflow created: bead-spring-rg-2026-04-01. Stages: 3 total, all pending.
-[2026-04-01 00:01] Session 1 started. Workflow: bead-spring-rg-2026-04-01
-[2026-04-01 00:01] stage-1 (Structure Generation): status -> ready (no dependencies)
-[2026-04-01 00:01] stage-1 (Structure Generation): status -> preparing (sync dispatch)
-[2026-04-01 00:02] stage-1 (Structure Generation): status -> post_processing
-[2026-04-01 00:03] stage-1 (Structure Generation): status -> completed (verification passed: max bond=0.971 sigma, box=18.0 sigma)
-[2026-04-01 00:03] stage-2 (Minimization and Equilibration): status -> ready (stage-1 completed)
-[2026-04-01 00:03] stage-2 (Minimization and Equilibration): status -> preparing (async dispatch, ~5 min)
-[2026-04-01 00:03] stage-2 (Minimization and Equilibration): status -> running (tmux: equil_stage2)
-[2026-04-01 00:04] stage-2 (Minimization and Equilibration): status -> post_processing (DONE marker found, exit 0)
-[2026-04-01 00:05] stage-2 (Minimization and Equilibration): status -> completed (T_mean=1.024, R_g mean=4.57, no LOST ATOMS, no drift)
-[2026-04-01 00:05] stage-3 (Production and R_g Measurement): status -> ready (stage-2 completed)
-[2026-04-01 00:05] stage-3 (Production and R_g Measurement): status -> preparing (async dispatch)
-[2026-04-01 00:06] stage-3 (Production and R_g Measurement): status -> running (tmux: prod_stage3)
-[2026-04-01 00:06] stage-3 (Production and R_g Measurement): status -> post_processing (DONE marker found, exit 0)
-[2026-04-01 00:06] stage-3 (Production and R_g Measurement): status -> completed (101 samples, R_g=4.719±0.096 sigma, stderr=2.03%)
-[2026-04-01 00:06] All stages completed. Invoking workflow-completion.
-[2026-04-01 00:07] Workflow completed. All 3 stages verified. Report: docs/superscientist/reports/2026-04-01-bead-spring-rg-report.md
+[2026-04-01T00:00:00Z] Workflow re-initialized from scratch: bead-spring-rg-2026-04-01. Stages: 3 total.
+[2026-04-01T00:00:00Z] stage-1 (Structure Generation): status -> ready (no dependencies)
+[2026-04-01T00:00:00Z] stage-2 (Minimization and Equilibration): status -> pending (depends on stage-1)
+[2026-04-01T00:00:00Z] stage-3 (Production and R_g Measurement): status -> pending (depends on stage-2)
+[2026-04-01T00:08:00Z] stage-1 (Structure Generation): status -> preparing (sync dispatch)
+[2026-04-01T13:56:45Z] stage-1 (Structure Generation): status -> completed (sync dispatch via DPDispatcher Shell/LocalContext)
+[2026-04-01T13:56:45Z] stage-1 verification: N50.data exists (2048 bytes); 50 atoms, 49 bonds; box=18.0 sigma [PASS >= 18]; max_bond=0.9708 sigma [PASS < 1.35]; all success criteria met
+[2026-04-01T13:56:45Z] stage-2 (Minimization and Equilibration): status -> ready (depends on stage-1 which is now completed)
+[2026-04-01T13:56:45Z] stage-1 (Structure Generation): status -> post_processing
+[2026-04-01T13:56:45Z] stage-1 (Structure Generation): status -> completed (max_bond=0.9708 sigma, box=18.0 sigma)
+[2026-04-01T13:56:45Z] stage-2 (Minimization and Equilibration): status -> ready (stage-1 completed)
+[2026-04-01T13:57:00Z] stage-2 (Minimization and Equilibration): status -> preparing (async dispatch, ~5 min)
+[2026-04-01T13:57:00Z] stage-2 (Minimization and Equilibration): status -> running (tmux: dpdisp_stage-2)
+[2026-04-01T13:58:00Z] stage-2 (Minimization and Equilibration): status -> post_processing (DPDISP_DONE, exit 0)
+[2026-04-01T14:00:00Z] stage-2 (Minimization and Equilibration): status -> completed (T_mean=1.035, R_g=4.643 sigma, no LOST ATOMS, no drift)
+[2026-04-01T14:00:00Z] stage-3 (Production and R_g Measurement): status -> ready (stage-2 completed)
+[2026-04-01T14:00:00Z] stage-3 (Production and R_g Measurement): status -> preparing (async dispatch, ~5 min)
+[2026-04-01T14:00:00Z] stage-3 (Production and R_g Measurement): status -> running (tmux: dpdisp_stage-3)
+[2026-04-01T14:06:00Z] stage-3 (Production and R_g Measurement): status -> post_processing (DPDISP_DONE, exit 0)
+[2026-04-01T14:06:00Z] stage-3 (Production and R_g Measurement): status -> completed (101 samples, R_g=4.847±0.092 sigma, SEM=1.90%)
+[2026-04-01T14:06:00Z] All stages completed. Invoking workflow-completion.
+[2026-04-01T14:07:00Z] Workflow completed. All 3 stages verified. Report: docs/superscientist/reports/2026-04-01-bead-spring-rg-report.md
