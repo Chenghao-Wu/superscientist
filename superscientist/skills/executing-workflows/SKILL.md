@@ -1,0 +1,246 @@
+---
+name: executing-workflows
+description: Use when a workflow plan exists and stages need to be executed sequentially in the current session
+---
+
+# Executing Workflows
+
+## Overview
+
+Execute workflow stages sequentially, one subagent per stage. The orchestrator (you) manages state, dispatches subagents, and advances the workflow.
+
+**Core principle:** Fresh subagent per stage. File-centric state. Sequential execution. Persist every state change to disk immediately.
+
+**REQUIRED BACKGROUND:** `superscientist:checkpoint-management` defines the state model (9 statuses, valid transitions), progress.log format, `running_process` schema, and poll protocol. This skill defines the orchestrator's execution loop.
+
+**Persistence rule:** Every status transition must be written to `workflow-state.json` AND appended to `progress.log` *before* the next action.
+
+## Quick Reference
+
+| Phase | Status transitions | Action |
+|---|---|---|
+| Dispatch (sync) | `ready` -> `preparing` -> `post_processing` -> `completed`/`failed` | Subagent runs inline, verify immediately |
+| Dispatch (async) | `ready` -> `preparing` -> `running` -> `post_processing` -> `completed`/`failed` | tmux wrapper, poll for DPDISP_DONE |
+| Retry | `failed` -> `ready` (increment `retry_count`) | Max 3 retries, then stop |
+| Dependency met | `pending` -> `ready` | Run after each stage completes |
+
+| Decision | Sync | Async |
+|---|---|---|
+| When | Local backend AND < 2 min | Remote (always), or local > 2 min |
+| Subagent returns | Inline results | tmux session name + submission.json path |
+| Status after dispatch | Stays `preparing` (skip `running`) | `preparing` -> `running` |
+
+**Template variables for subagent prompt:** `experiment_design` and `workflow_plan` are file paths from the top-level fields in `workflow-state.json`. Backend profile comes from `workflow-state.json` > `backend_profiles` > `{stage.backend or default_backend}`.
+
+## Execution Loop
+
+```dot
+digraph execution {
+    rankdir=TB;
+    "Pre-flight (init.sh + read state)" [shape=box];
+    "Resolve dependencies" [shape=box];
+    "Next actionable stage?" [shape=diamond];
+    "Dispatch subagent" [shape=box];
+    "Sync or async?" [shape=diamond];
+    "Run sync, get result" [shape=box];
+    "Launch async, record tmux" [shape=box];
+    "Poll (60s interval)" [shape=box];
+    "Done?" [shape=diamond];
+    "Set post_processing,\ninvoke result-verification" [shape=box];
+    "Passed?" [shape=diamond];
+    "Mark completed,\nresolve dependencies" [shape=box];
+    "Mark failed,\ninvoke systematic-debugging" [shape=box];
+    "retry_count < 3?\nFix applied?" [shape=diamond];
+    "failed -> ready\n(increment retry_count)" [shape=box];
+    "STOP: ask user" [shape=box];
+    "All completed?" [shape=diamond];
+    "Invoke workflow-completion" [shape=box];
+    "End session cleanly" [shape=box];
+
+    "Pre-flight (init.sh + read state)" -> "Resolve dependencies";
+    "Resolve dependencies" -> "Next actionable stage?";
+    "Next actionable stage?" -> "Dispatch subagent" [label="yes (first ready by array order)"];
+    "Next actionable stage?" -> "All completed?" [label="no"];
+    "Dispatch subagent" -> "Sync or async?";
+    "Sync or async?" -> "Run sync, get result" [label="local < 2 min"];
+    "Sync or async?" -> "Launch async, record tmux" [label="remote or > 2 min"];
+    "Run sync, get result" -> "Set post_processing,\ninvoke result-verification";
+    "Launch async, record tmux" -> "Poll (60s interval)";
+    "Poll (60s interval)" -> "Done?";
+    "Done?" -> "Set post_processing,\ninvoke result-verification" [label="DPDISP_DONE"];
+    "Done?" -> "Poll (60s interval)" [label="tmux alive"];
+    "Done?" -> "Mark failed,\ninvoke systematic-debugging" [label="tmux dead,\nno marker"];
+    "Set post_processing,\ninvoke result-verification" -> "Passed?";
+    "Passed?" -> "Mark completed,\nresolve dependencies" [label="yes"];
+    "Passed?" -> "Mark failed,\ninvoke systematic-debugging" [label="no"];
+    "Mark completed,\nresolve dependencies" -> "Next actionable stage?";
+    "Mark failed,\ninvoke systematic-debugging" -> "retry_count < 3?\nFix applied?";
+    "retry_count < 3?\nFix applied?" -> "failed -> ready\n(increment retry_count)" [label="yes"];
+    "retry_count < 3?\nFix applied?" -> "STOP: ask user" [label="no"];
+    "failed -> ready\n(increment retry_count)" -> "Next actionable stage?";
+    "All completed?" -> "Invoke workflow-completion" [label="yes"];
+    "All completed?" -> "End session cleanly" [label="no (blocked/waiting)"];
+}
+```
+
+## Pre-Flight
+
+Before dispatching any stage:
+
+1. **Run `init.sh`** — verifies environment. If it fails, invoke `superscientist:systematic-debugging`.
+2. **Read `workflow-state.json`** — load full workflow state.
+3. **Resolve dependencies** — advance `pending` stages to `ready` (see below).
+
+## Dependency Resolution
+
+Run after pre-flight AND after each stage completes:
+
+```
+for each stage with status "pending":
+    if depends_on is empty:
+        set status -> "ready" (no dependencies = immediately ready)
+    else if ALL stages in depends_on have status "completed":
+        set status -> "ready"
+        log: "[timestamp] stage-N (Name): status -> ready (dependencies met)"
+    else if ANY stage in depends_on has status "failed" or "skipped":
+        log warning: "[timestamp] stage-N blocked: dependency stage-M is failed/skipped"
+```
+
+Note: `skipped` is set only via user decision through the amendment protocol in `checkpoint-management`.
+
+**"First" stage:** When multiple stages are `ready`, select the first by array order in `workflow-state.json`.
+
+## Per-Stage Execution
+
+### 1. Select Stage
+
+Find first stage with status `ready` (by array order in `workflow-state.json`). Failed stages become `ready` again through the Retry Flow below — they are not selected while still `failed`.
+
+### 2. Dispatch Subagent
+
+Update status: `ready` -> `preparing`. Log transition. Set `started_at`.
+
+```
+Agent(
+  subagent_type: "general-purpose",
+  description: "Execute stage-N: {stage name}",
+  prompt: <see template below>,
+  run_in_background: false
+)
+```
+
+#### Subagent Prompt Template
+
+```
+You are executing stage-{id} ({name}) of workflow "{workflow_id}".
+
+## Context
+Read these for scientific goals and constraints:
+- Experiment design: {experiment_design}
+- Workflow plan: {workflow_plan}
+
+## Stage Specification
+{paste full stage JSON object from workflow-state.json}
+
+## Dependency Outputs
+{for each depends_on stage, list: "stage-{id} ({name}): {output_key}: {output_path}"}
+
+## Backend
+Profile: {profile_name}
+Type: {local | remote}
+{profile JSON with resource_defaults merged with any stage resource_overrides}
+
+## Instructions
+1. Verify ALL input files exist and are non-empty.
+2. Prepare the computation script using stage parameters and domain skills.
+3. **YOU MUST invoke `superscientist:compute-backend` to submit this job.**
+   **NEVER run the computation command directly** (no `lmp < script`, no `bash script`, no `python script.py`, no subprocess). DPDispatcher is the ONLY allowed execution path — even for local backends, even for "simple" one-liners, even when it feels like overkill.
+   - Provide it: the stage directory, the command, forward/backward files.
+4. Report back: submission status, submission.json path, and either
+   inline results (sync) or tmux session name (async).
+
+{IF retry_count > 0}
+## Retry Context
+This is retry #{retry_count}. Previous error: {last_error}
+Fix applied: {description from progress.log}
+Input scripts already corrected. DO NOT regenerate from scratch.
+Verify the fix is present before running.
+{END IF}
+```
+
+The compute-backend skill determines sync vs. async based on the backend type and estimated runtime.
+
+### 3. Process Subagent Result
+
+**Sync** (local, < 2 min): Subagent returns inline results. Status stays `preparing` — skip `running`. Proceed directly to step 5.
+
+**Async** (remote, or local > 2 min): Subagent reports tmux session name and submission.json path. Update status: `preparing` -> `running`. Record `running_process` in `workflow-state.json` per the schema in `checkpoint-management`. Log: `[timestamp] stage-N: status -> running (tmux: dpdisp_stage-N)`.
+
+### 4. Monitor Background Process (async only)
+
+Poll using the protocol from `checkpoint-management`:
+
+```bash
+sleep 60 && \
+  if test -f "stage-N/DPDISP_DONE"; then
+    echo "STATUS=DONE"; cat stage-N/DPDISP_EXIT_CODE
+  elif tmux has-session -t dpdisp_stage-N 2>/dev/null; then
+    echo "STATUS=ALIVE"
+  else
+    echo "STATUS=DEAD"
+  fi
+```
+
+| Result | Action |
+|---|---|
+| `DONE` + exit 0 | Status -> `post_processing`. Proceed to step 5. |
+| `DONE` + exit non-zero | Status -> `failed`. Set `last_error` from `stage-N/err`. Invoke `systematic-debugging`. |
+| `ALIVE` | Log progress note. Continue polling. |
+| `DEAD` + `recovery_attempted: false` | Re-launch tmux: `tmux kill-session -t dpdisp_stage-N 2>/dev/null && tmux new-session -d -s dpdisp_stage-N "bash stage-N/dpdisp-run.sh"`. Set `recovery_attempted: true`. DPDispatcher resumes idempotently. |
+| `DEAD` + `recovery_attempted: true` | Status -> `failed`. `last_error`: "DPDispatcher monitoring died twice." Invoke `systematic-debugging`. |
+
+**Session boundary:** If context is getting long, log `[timestamp] Session ended. stage-N still running (tmux: dpdisp_stage-N).` and exit. `session-resume` handles recovery.
+
+### 5. Verify and Complete
+
+Set status -> `post_processing`. Log and persist. Then invoke `superscientist:result-verification`.
+
+- **Passed:** Status -> `completed`. Set `completed_at`. Log. Run dependency resolution.
+- **Failed:** Status -> `failed`. Set `last_error`. Log. Invoke `superscientist:systematic-debugging`.
+
+Note: For sync flow, `post_processing` is set here (the only place). For async flow, it is set after poll detects `DPDISP_DONE` with exit 0.
+
+## Workflow Termination
+
+**Check after each stage completes and dependency resolution runs:**
+
+- **All stages `completed` or `skipped`:** Invoke `superscientist:workflow-completion`.
+- **No `ready` or `running` stages, but uncompleted stages remain:** Workflow is blocked. Log and inform the user which stages are blocked and why.
+
+## Retry Flow
+
+After `systematic-debugging` identifies and applies a fix:
+
+1. **Transition:** `failed` -> `ready`. Increment `retry_count`. Log: `[timestamp] stage-N: retry #{count} after fix: {description}`.
+2. **Max retries:** If `retry_count` reaches 3, **STOP**. Inform user: "stage-N has failed 3 times. Manual intervention required."
+3. **Old outputs:** Leave in place — the new run overwrites them.
+4. **Parameter changes:** If the fix modifies `parameters` or `success_criteria` in `workflow-state.json`, use the amendment protocol from `checkpoint-management` first. Changes only to input script content (e.g., fixing a LAMMPS command) do NOT require an amendment.
+5. **Subagent context:** Include retry info in the prompt (see template). Prevents subagent from regenerating scripts and reverting the fix.
+
+## Red Flags
+
+| Thought | Reality |
+|---------|---------|
+| "I'll run all stages at once" | Sequential. One at a time. |
+| "Skip verification, results look fine" | `result-verification` is mandatory for every stage. |
+| "I'll update the state file later" | Update immediately on every transition. |
+| "This will be quick, skip tmux" | Only skip tmux for local backend AND < 2 min. Remote always uses tmux. |
+| "I'll keep polling, almost done" | If context is long, end session. `session-resume` picks up. |
+| "I'll regenerate the input script for the retry" | Check if a fix was already applied. Use retry context in prompt. |
+| "Dependencies are obvious, skip the check" | Run dependency resolution algorithmically. Never assume. |
+| "init.sh passed last time, skip it" | Environment changes between sessions. Always run pre-flight. |
+| "Let me try one more fix" (retry_count >= 3) | Stop. 3 failures means the approach may be wrong. Ask the user. |
+| "It's local and fast, I'll just run `lmp < ...` directly" | **NEVER.** All jobs go through compute-backend → DPDispatcher. No exceptions. |
+| "compute-backend is overkill for this simple script" | compute-backend is mandatory for every stage, regardless of complexity. |
+| "I'll test the script first by running it directly, then use DPDispatcher" | **Never run the command directly.** Use `dargs check` and `--dry-run` to validate. |
+| "The subagent already ran the job, I just need to check outputs" | If compute-backend was not invoked, the stage is not complete. The job must be re-run through DPDispatcher. |

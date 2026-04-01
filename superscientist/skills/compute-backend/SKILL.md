@@ -1,0 +1,230 @@
+---
+name: compute-backend
+description: Use when a workflow stage subagent has prepared computation scripts and needs to submit the job to a local or HPC backend via DPDispatcher
+---
+
+# Compute Backend
+
+## Overview
+
+Unified dispatch interface for superscientist workflow stages. All computations — local and remote — go through DPDispatcher.
+
+**Core principle:** One code path. No branching between local bash wrappers and HPC submission. DPDispatcher handles everything.
+
+**NEVER run the computation command directly.** This means no `lmp < script`, no `bash script.sh`, no `python run.py`, no subprocess, no shell exec — nothing that bypasses `dpdisp submit`. Local backends use `batch_type: Shell`, which still runs through DPDispatcher. There are zero exceptions to this rule, regardless of how simple, local, or fast the job appears.
+
+**REQUIRED CONTEXT:** The orchestrator includes the backend profile in the subagent prompt under "Backend". Read it before using this skill.
+
+## Quick Reference
+
+| Operation | Command |
+|---|---|
+| Schema docs | `uvx --with dpdispatcher dargs doc dpdispatcher.entrypoints.submit.submission_args` |
+| Validate | `uvx --with dpdispatcher dargs check [--allow-ref] -f dpdispatcher.entrypoints.submit.submission_args stage-{id}/submission.json` |
+| Dry-run | `uvx --from dpdispatcher dpdisp submit --dry-run [--allow-ref] stage-{id}/submission.json` |
+| Submit | `uvx --from dpdispatcher dpdisp submit [--allow-ref] stage-{id}/submission.json` |
+
+| Decision | Sync | Async |
+|---|---|---|
+| Backend | Local | Remote (always) |
+| Runtime | < 2 min | > 2 min or remote |
+| Method | `dpdisp submit` directly | Wrapper script in tmux |
+| tmux session | None | `dpdisp_stage-{id}` |
+| Markers | None | `DPDISP_DONE`, `DPDISP_EXIT_CODE` |
+
+**`--allow-ref` is REQUIRED** on all `dargs check` and `dpdisp submit` commands when `$ref` is used in the machine block.
+
+## Workflow
+
+### Step 1: Resolve Backend Profile
+
+Read the profile from the "Backend" section of the subagent prompt:
+- Profile name (e.g., `"local"`, `"hpc-cluster"`)
+- Type (`"local"` or `"remote"`)
+- Machine config (inline for local, `config_path` for remote)
+- Resource defaults (merged with any stage-level `resource_overrides`)
+
+### Step 2: Acquire Schema (optional)
+
+If using the templates below, skip this step. Otherwise, run:
+
+```bash
+uvx --with dpdispatcher dargs doc dpdispatcher.entrypoints.submit.submission_args
+```
+
+This defines valid fields, types, and defaults for `submission.json`.
+
+### Step 3: Build submission.json
+
+**Before building:** Copy any dependency outputs from prior stages into `stage-{id}/` so paths resolve correctly (see File Transfer Heuristics).
+
+Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no `"submission": { ... }` wrapper** (causes `dargs check` to fail with "undefined key `submission`").
+
+**Working directory:** The command runs in `{local_root}/{work_base}/{task_work_path}`, which for local jobs resolves to `{workflow_root}/stage-{id}/`.
+
+#### Local backend template
+
+```json
+{
+  "work_base": ".",
+  "machine": {
+    "batch_type": "Shell",
+    "context_type": "LocalContext",
+    "local_root": "/absolute/path/to/workflow/root",
+    "remote_root": "/absolute/path/to/workflow/root"
+  },
+  "resources": {
+    "number_node": 1,
+    "cpu_per_node": 1,
+    "gpu_per_node": 0,
+    "group_size": 1,
+    "queue_name": ""
+  },
+  "task_list": [
+    {
+      "command": "lmp -in in.minimize",
+      "task_work_path": "stage-1",
+      "forward_files": ["in.minimize", "data.polymer"],
+      "backward_files": ["log.lammps", "data.minimized", "log", "err"]
+    }
+  ]
+}
+```
+
+- `local_root` and `remote_root`: REQUIRED even for LocalContext (without them, `dpdisp submit` crashes with `KeyError: 'remote_root'`). Both are the workflow root absolute path. Resolve via `$(pwd)`.
+- `resources`: Start from the profile's `resource_defaults`. If none provided, use the values above as defaults. Apply any stage-level `resource_overrides` on top.
+
+#### Remote backend template
+
+```json
+{
+  "work_base": ".",
+  "machine": {
+    "$ref": "/home/user/.dpdisp/hpc_config.json"
+  },
+  "resources": {
+    "queue_name": "gpu",
+    "number_node": 4,
+    "cpu_per_node": 16,
+    "gpu_per_node": 2,
+    "group_size": 1
+  },
+  "task_list": [
+    {
+      "command": "lmp -in in.production",
+      "task_work_path": "stage-3",
+      "forward_files": ["in.production", "restart.equil"],
+      "backward_files": ["log.lammps", "dump.production", "restart.final", "log", "err"]
+    }
+  ]
+}
+```
+
+- `$ref` is a plain file path — NOT a JSON Pointer (`$ref:/path#/key` is WRONG). **NEVER read the referenced file** (contains credentials).
+- **All `dargs check` and `dpdisp submit` commands MUST include `--allow-ref`** when `$ref` is used.
+
+#### envsubst (conditional)
+
+If non-machine fields use `${VAR}` placeholders (e.g., resource paths from env vars):
+1. Write `stage-{id}/submission.template.json` with placeholders
+2. Run: `envsubst '${VAR1} ${VAR2}' < stage-{id}/submission.template.json > stage-{id}/submission.json`
+3. **NEVER read `submission.json` after `envsubst`** — it contains resolved secrets
+
+### Step 4: Validate & Dry-Run
+
+Run both in sequence. If either fails, stop and report to the orchestrator.
+
+```bash
+# Schema validation
+uvx --with dpdispatcher dargs check [--allow-ref] \
+  -f dpdispatcher.entrypoints.submit.submission_args \
+  stage-{id}/submission.json
+
+# Dry-run: parses config, validates paths — does NOT submit
+uvx --from dpdispatcher dpdisp submit --dry-run [--allow-ref] \
+  stage-{id}/submission.json
+```
+
+The dry-run catches path resolution issues that schema validation misses (e.g., invalid `$ref` targets).
+
+### Step 5: Dispatch
+
+**Sync path** (local backend AND expected runtime < 2 min):
+
+```bash
+uvx --from dpdispatcher dpdisp submit [--allow-ref] stage-{id}/submission.json
+```
+
+Report results inline: exit code, output files, any warnings from logs.
+
+**Async path** (remote backend always, OR local > 2 min):
+
+Use these EXACT names — the orchestrator's poll protocol depends on them:
+
+1. Write **`stage-{id}/dpdisp-run.sh`**:
+   ```bash
+   #!/bin/bash
+   cd "$(dirname "$0")/.."
+   uvx --from dpdispatcher dpdisp submit [--allow-ref] stage-{id}/submission.json
+   echo $? > stage-{id}/DPDISP_EXIT_CODE
+   touch stage-{id}/DPDISP_DONE
+   ```
+
+2. Launch in tmux as **`dpdisp_stage-{id}`**:
+   ```bash
+   tmux kill-session -t dpdisp_stage-{id} 2>/dev/null
+   tmux new-session -d -s dpdisp_stage-{id} "bash stage-{id}/dpdisp-run.sh"
+   ```
+
+3. Verify: `tmux has-session -t dpdisp_stage-{id} 2>/dev/null && echo "Running" || echo "FAIL"`
+
+4. Report to orchestrator: tmux session name, submission.json path.
+
+## File Transfer Heuristics
+
+All paths in `forward_files` and `backward_files` are **relative to `task_work_path`** (i.e., relative to `stage-{id}/`).
+
+**forward_files** — everything the job reads:
+- Scripts/configs prepared for this stage (e.g., `in.minimize`, `data.polymer`)
+- Dependency outputs from prior stages — **copy into `stage-{id}/` first**, then list the copied filename:
+  ```bash
+  cp ../stage-2/equilibrated.data stage-{id}/equilibrated.data
+  ```
+- Auxiliary files referenced in scripts (force fields, potential tables)
+
+**backward_files** — everything that needs to come back:
+- All expected output files from the stage spec's `outputs`
+- Always include: `log`, `err` (DPDispatcher standard output)
+- Restart/checkpoint files the computation produces
+
+## Important Notes
+
+- **DPDISP_EXIT_CODE** reflects DPDispatcher's exit code, NOT scientific correctness. The orchestrator always proceeds to `result-verification` regardless.
+- **DPDispatcher polls internally** every 30 s in blocking mode. The tmux session keeps this alive across session boundaries.
+- **Recovery:** If tmux dies without `DPDISP_DONE`, re-launch `dpdisp-run.sh` in a new tmux session. DPDispatcher's idempotent recovery resumes monitoring without re-submitting.
+
+## Security Guardrails
+
+- **NEVER read external `$ref` config files** — they contain credentials
+- **NEVER read `submission.json` after `envsubst`** — it contains resolved secrets
+- **NEVER use direct SSH** — all remote operations through DPDispatcher only
+- **NEVER run the computation command directly** — not even for local, not even once to "test" it
+
+## Red Flags
+
+| Thought | Reality |
+|---------|---------|
+| "I'll SSH to check the job" | All remote operations go through DPDispatcher. No direct SSH. |
+| "Let me read the machine config to verify it" | NEVER read `$ref` config files. They contain credentials. |
+| "I'll skip the dry-run, validation passed" | Dry-run catches path issues validation misses. Always run both. |
+| "This local job is fast, skip tmux" | Only skip tmux for local backend AND < 2 min expected runtime. |
+| "I'll set forward_files later" | Build the complete file list now. Missing files = failed job on remote. |
+| "Let me read submission.json to verify envsubst worked" | NEVER read after envsubst. It contains resolved secrets. |
+| "I'll write my own wrapper script" | Use the EXACT template. The orchestrator depends on `dpdisp-run.sh`, `DPDISP_DONE`, `DPDISP_EXIT_CODE`, and `dpdisp_stage-{id}` naming. |
+| "The key is `task` not `task_list`" | It is `task_list` (array). |
+| "I'll wrap it in `{submission: {...}}`" | No wrapper. Flat JSON. `dargs check` rejects a `submission` key. |
+| "It's just a local job, I'll run `lmp < in.minimize` directly" | **NEVER.** Local backends use `batch_type: Shell` — still submitted via `dpdisp submit`. |
+| "DPDispatcher is slow/complex for this simple script" | Complexity is irrelevant. Every job goes through `dpdisp submit`. No exceptions. |
+| "I'll run it directly first to test, then use DPDispatcher for real" | **NEVER run directly.** Validate with `dargs check` and `--dry-run`. That is sufficient. |
+| "I'll just `bash` the run script I wrote" | Only valid script to run is `dpdisp-run.sh` inside tmux. Never bash the simulation script directly. |
+| "The submission.json is ready, but dpdisp seems broken — I'll just run the command" | Stop and debug DPDispatcher. Do not bypass it. Report the failure to the orchestrator. |

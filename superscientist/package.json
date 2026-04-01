@@ -1,0 +1,16 @@
+{
+  "name": "superscientist",
+  "version": "0.1.0",
+  "description": "File-centric, resumable harness for computational science workflows",
+  "main": ".opencode/plugins/superscientist.js",
+  "type": "module",
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "computational-chemistry",
+    "materials-science",
+    "workflow",
+    "harness",
+    "resumable"
+  ]
+}
