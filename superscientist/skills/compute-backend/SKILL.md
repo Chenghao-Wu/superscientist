@@ -172,6 +172,37 @@ DPDispatcher inserts `custom_flags` entries **verbatim** into the generated subm
 
 This mapping is internal to DPDispatcher and may change across versions. It is a reference for human awareness, not automated validation.
 
+#### Pre-flight Validation (remote backends)
+
+For remote backend stages, generate a stage-specific validation script based on the stage's `parameters` (software, required packages, flags). This catches environment mismatches before the actual computation runs, inside the same Slurm allocation — zero extra jobs.
+
+**How it works:**
+
+1. Write a validation script to `stage-{id}/validate_env.sh` based on the stage's software and flags:
+
+```bash
+#!/bin/bash
+# validate_env.sh — uploaded as forward_file, executed via prepend_script
+# Checks generated from stage parameters — adapt per software
+command -v lmp >/dev/null 2>&1 || { echo "FAIL: lmp not found in PATH"; exit 1; }
+lmp -h 2>&1 | grep -q "Installed packages:" || { echo "FAIL: cannot query lmp packages"; exit 1; }
+# If command uses -sf gpu, check for GPU package:
+lmp -h 2>&1 | grep -q "GPU" || { echo "FAIL: GPU package not found — remove -sf gpu"; exit 1; }
+echo "ENV_VALIDATION_PASSED"
+```
+
+2. Add `validate_env.sh` to `forward_files` so DPDispatcher uploads it to the remote.
+3. Add `"bash validate_env.sh || exit 1"` to the `prepend_script` array in `resources`.
+
+**Why `prepend_script` and not `source_list`:** DPDispatcher renders `source_list` entries as bare `source {file}` lines with no error checking. A failing `source` does not abort execution. `prepend_script` lines run as shell commands with explicit `|| exit 1`, which aborts the job immediately on failure.
+
+**When to generate:** For every remote backend stage. The validation checks are derived from:
+- `parameters.software` → check binary exists
+- Command flags (e.g., `-sf gpu`) → check required packages
+- `[UNVERIFIED]` annotations in the experiment design → mandatory validation
+
+**When to skip:** Local backend stages (`batch_type: Shell`) do not need pre-flight validation — `init.sh` already validates the local environment.
+
 ### Step 4: Validate & Dry-Run
 
 Run both in sequence. If either fails, stop and report to the orchestrator.
