@@ -2,7 +2,8 @@
   "workflow_id": "bead-spring-rg-2026-04-01",
   "version": 1,
   "created": "2026-04-01T00:00:00Z",
-  "updated": "2026-04-01T00:00:00Z",
+  "workflow_status": "completed",
+  "updated": "2026-04-01T00:07:00Z",
   "experiment_design": "docs/superscientist/specs/2026-04-01-bead-spring-rg-design.md",
   "workflow_plan": "docs/superscientist/plans/2026-04-01-bead-spring-rg.md",
   "amendments": [],
@@ -20,7 +21,7 @@
     {
       "id": "stage-1",
       "name": "Structure Generation",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [],
       "backend": null,
       "inputs": [],
@@ -35,8 +36,8 @@
         "placement": "saw_generate"
       },
       "success_criteria": "Data file written; max bond length < 1.35 sigma; box length >= 18 sigma",
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-04-01T00:01:00Z",
+      "completed_at": "2026-04-01T00:03:00Z",
       "retry_count": 0,
       "last_error": null,
       "running_process": null
@@ -44,7 +45,7 @@
     {
       "id": "stage-2",
       "name": "Minimization and Equilibration",
-      "status": "pending",
+      "status": "completed",
       "depends_on": ["stage-1"],
       "backend": null,
       "inputs": ["stage-1/N50.data"],
@@ -62,16 +63,23 @@
         "equilibration_tau": 10000
       },
       "success_criteria": "No LOST ATOMS error; temperature stable at T=1.0 +/- 0.05; R_g trace shows no monotonic drift over last 50% of equilibration",
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-04-01T00:03:00Z",
+      "completed_at": "2026-04-01T00:05:00Z",
       "retry_count": 0,
       "last_error": null,
-      "running_process": null
+      "running_process": {
+        "tmux_session": "equil_stage2",
+        "wrapper_script": "stage-2/run.sh",
+        "done_marker": "stage-2/DONE",
+        "exit_code_file": "stage-2/DONE_EXIT_CODE",
+        "recovery_attempted": false,
+        "launched_at": "2026-04-01T00:03:00Z"
+      }
     },
     {
       "id": "stage-3",
       "name": "Production and R_g Measurement",
-      "status": "pending",
+      "status": "completed",
       "depends_on": ["stage-2"],
       "backend": null,
       "inputs": ["stage-2/equil.restart"],
@@ -89,8 +97,8 @@
         "expected_samples": 100
       },
       "success_criteria": ">= 50 approximately uncorrelated R_g samples; standard error of mean R_g < 5% of mean",
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-04-01T00:05:00Z",
+      "completed_at": "2026-04-01T00:06:00Z",
       "retry_count": 0,
       "last_error": null,
       "running_process": null
