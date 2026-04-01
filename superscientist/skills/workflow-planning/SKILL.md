@@ -64,6 +64,18 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
         "batch_type": "Shell",
         "context_type": "LocalContext"
       }
+    },
+    "hpc-cluster": {
+      "type": "remote",
+      "batch_type": "Slurm",
+      "config_path": "/home/user/.dpdisp/hpc_config.json",
+      "resource_defaults": {
+        "number_node": 1,
+        "cpu_per_node": 16,
+        "gpu_per_node": 0,
+        "queue_name": "",
+        "group_size": 1
+      }
     }
   },
   "stages": [
@@ -99,7 +111,7 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
 - Top-level MUST include `version: 1` and `amendments: []`
 - Top-level MUST include `default_backend` and `backend_profiles` (at minimum a `"local"` profile)
 - Stage `backend` field is optional — `null` means use `default_backend`
-- `backend_profiles` with `type: "remote"` must include `config_path` (path to external machine config — validated for existence, never read) and `resource_defaults`
+- `backend_profiles` with `type: "remote"` must include `batch_type` (the scheduler type from the machine config, e.g., `"Slurm"`, `"PBS"`, `"LSF"`, `"SGE"`), `config_path` (path to external machine config — validated for existence, never read), and `resource_defaults`
 - Do NOT add extra fields (`description`, `known_pitfalls`, `safeguards`, `expected_walltime`, `execution_order`) — those belong in the design doc or plan doc, not the state file
 
 ### Step 4: Create `progress.log`
