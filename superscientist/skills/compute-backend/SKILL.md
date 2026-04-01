@@ -107,13 +107,17 @@ Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no
     "number_node": 4,
     "cpu_per_node": 16,
     "gpu_per_node": 2,
-    "group_size": 1
+    "group_size": 1,
+    "custom_flags": ["#SBATCH --qos=4gpus", "#SBATCH --mem-per-gpu=10G"],
+    "module_list": ["cuda/12.0", "openmpi/4.1"],
+    "source_list": ["/path/to/env_setup.sh"],
+    "prepend_script": ["bash validate_env.sh || exit 1"]
   },
   "task_list": [
     {
       "command": "lmp -in in.production",
       "task_work_path": "stage-3",
-      "forward_files": ["in.production", "restart.equil"],
+      "forward_files": ["in.production", "restart.equil", "validate_env.sh"],
       "backward_files": ["log.lammps", "dump.production", "restart.final", "log", "err"]
     }
   ]
@@ -122,6 +126,11 @@ Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no
 
 - `$ref` is a plain file path — NOT a JSON Pointer (`$ref:/path#/key` is WRONG). **NEVER read the referenced file** (contains credentials).
 - **All `dargs check` and `dpdisp submit` commands MUST include `--allow-ref`** when `$ref` is used.
+- `custom_flags`: Extra scheduler-header lines inserted **verbatim** by DPDispatcher. Each entry MUST include the scheduler prefix (e.g., `#SBATCH` for Slurm). See Custom Flags Validation below.
+- `module_list`: HPC modules loaded before the command runs.
+- `source_list`: Shell scripts sourced before the command. Does NOT abort on failure — use for non-critical environment setup only.
+- `prepend_script`: Shell lines executed before the task command. Use `|| exit 1` to abort on failure. Suitable for pre-flight validation (see Pre-flight Validation below).
+- `validate_env.sh`: Include in `forward_files` so it is uploaded to the remote.
 
 #### envsubst (conditional)
 
@@ -129,6 +138,39 @@ If non-machine fields use `${VAR}` placeholders (e.g., resource paths from env v
 1. Write `stage-{id}/submission.template.json` with placeholders
 2. Run: `envsubst '${VAR1} ${VAR2}' < stage-{id}/submission.template.json > stage-{id}/submission.json`
 3. **NEVER read `submission.json` after `envsubst`** — it contains resolved secrets
+
+#### Custom Flags Validation
+
+DPDispatcher inserts `custom_flags` entries **verbatim** into the generated submission script. It does NOT auto-prepend the scheduler directive prefix. Entries without the correct prefix appear as bare shell lines and are silently ignored by the scheduler.
+
+**Before building submission.json**, validate every `custom_flags` entry:
+
+1. Look up `batch_type` from the backend profile:
+   - Local: `config.batch_type` (inline in profile)
+   - Remote: top-level `batch_type` field in the profile (set by `workflow-planning`)
+
+2. Check the required prefix:
+
+| `batch_type` | Required prefix | Example |
+|---|---|---|
+| `Slurm` / `SlurmJobArray` | `#SBATCH` | `"#SBATCH --qos=4gpus"` |
+| `PBS` / `Torque` | `#PBS` | `"#PBS -l walltime=24:00:00"` |
+| `LSF` | `#BSUB` | `"#BSUB -R rusage[mem=10000]"` |
+| `SGE` | `#$` | `"#$ -l h_vmem=10G"` |
+| `Shell` | N/A | Warn if `custom_flags` is non-empty (local Shell has no scheduler) |
+
+3. If any entry lacks the correct prefix, **stop and report to the orchestrator.** Do not proceed to validation or submission.
+
+**Auto-generated directive reference (Slurm):** These `resources` fields automatically generate Slurm directives. Do NOT duplicate them in `custom_flags`:
+
+| Resource field | Auto-generated directive (as of DPDispatcher v0.6+) |
+|---|---|
+| `number_node` | `#SBATCH --nodes N` |
+| `cpu_per_node` | `#SBATCH --ntasks-per-node N` |
+| `gpu_per_node` | `#SBATCH --gres=gpu:N` |
+| `queue_name` | `#SBATCH --partition NAME` |
+
+This mapping is internal to DPDispatcher and may change across versions. It is a reference for human awareness, not automated validation.
 
 ### Step 4: Validate & Dry-Run
 
