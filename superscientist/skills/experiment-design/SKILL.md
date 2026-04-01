@@ -125,6 +125,18 @@ For each computational stage, explicitly identify what commonly goes wrong and b
 
 This is not exhaustive — identify pitfalls specific to the user's system.
 
+**HPC software verification:**
+
+For every HPC binary path, package requirement, or software flag specified in the design:
+- Ask: "Has this been tested on the target cluster? Can you confirm `lmp -h` shows the GPU package?"
+- If verified: note the verification in the design doc (e.g., "Confirmed via `lmp -h` on 2026-03-30")
+- If not verified: annotate with `[UNVERIFIED]` in the design doc:
+  ```
+  **LAMMPS command:** `/gpfs/home/user/lammps/bin/lmp -sf gpu` [UNVERIFIED]
+  ```
+
+`[UNVERIFIED]` signals to `workflow-planning` and `compute-backend` that a `prepend_script` validation is mandatory for stages using this command.
+
 ## After the Design
 
 **Documentation:**
@@ -140,7 +152,8 @@ After writing the spec document, look at it with fresh eyes:
 3. **Method validation:** Is there a citation or validation stage for the method/force field choice?
 4. **Success criteria check:** Is every success criterion specific and measurable? "Converged" is not acceptable — give numbers.
 5. **Pitfall coverage:** Does every stage have identified pitfalls with safeguards?
-6. **Internal consistency:** Do stages connect properly? Are inputs/outputs consistent?
+6. **HPC verification:** Are all HPC binary paths and package requirements marked as verified or `[UNVERIFIED]`? No unexamined assumptions about remote software.
+7. **Internal consistency:** Do stages connect properly? Are inputs/outputs consistent?
 
 Fix any issues inline. No need to re-review — just fix and move on.
 
