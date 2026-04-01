@@ -1,8 +1,10 @@
 {
-  "hooks": [
-    {
-      "event": "SessionStart",
-      "command": "bash hooks/session-start --cursor"
-    }
-  ]
+  "version": 1,
+  "hooks": {
+    "sessionStart": [
+      {
+        "command": "./hooks/session-start --cursor"
+      }
+    ]
+  }
 }
