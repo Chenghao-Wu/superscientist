@@ -1,0 +1,10 @@
+{
+  "batch_type": "Slurm",
+  "context_type": "SSHContext",
+  "remote_profile": {
+    "hostname": "10.7.91.101",
+    "username": "zhenghaowu",
+    "port": 22
+  },
+  "remote_root": "/gpfs/home/che/zhenghaowu/bead-spring-rg"
+}

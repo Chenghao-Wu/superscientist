@@ -1,0 +1,117 @@
+{
+  "workflow_id": "bead-spring-rg-hpc-2026-04-01",
+  "version": 1,
+  "created": "2026-04-01T00:00:00Z",
+  "updated": "2026-04-01T00:00:00Z",
+  "experiment_design": "docs/superscientist/specs/2026-04-01-bead-spring-rg-hpc-design.md",
+  "workflow_plan": "docs/superscientist/plans/2026-04-01-bead-spring-rg-hpc.md",
+  "amendments": [],
+  "default_backend": "local",
+  "backend_profiles": {
+    "local": {
+      "type": "local",
+      "config": {
+        "batch_type": "Shell",
+        "context_type": "LocalContext"
+      }
+    },
+    "hpc-xjtlu": {
+      "type": "remote",
+      "config_path": "dpdisp-submit/XJTLU_XEC.json",
+      "resource_defaults": {
+        "queue_name": "gpu4090",
+        "number_node": 1,
+        "cpu_per_node": 1,
+        "gpu_per_node": 1,
+        "custom_flags": ["--gres=gpu:1", "--qos=4gpus", "--mem-per-gpu=10G"],
+        "group_size": 1
+      }
+    }
+  },
+  "stages": [
+    {
+      "id": "stage-1",
+      "name": "Structure Generation",
+      "status": "pending",
+      "depends_on": [],
+      "backend": "local",
+      "inputs": [],
+      "outputs": ["stage-1/N50.data"],
+      "parameters": {
+        "software": "AutoPoly",
+        "method": "BeadSpringPolymer.kremer_grest()",
+        "n_chains": 1,
+        "n_beads": 50,
+        "topology": "linear",
+        "box_size_sigma": 18.0,
+        "placement": "saw_generate"
+      },
+      "success_criteria": "Data file written; max bond length < 1.35 sigma; box length >= 18 sigma",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    },
+    {
+      "id": "stage-2",
+      "name": "Minimization and Equilibration",
+      "status": "pending",
+      "depends_on": ["stage-1"],
+      "backend": "hpc-xjtlu",
+      "inputs": ["stage-1/N50.data"],
+      "outputs": ["stage-2/equil.restart", "stage-2/log.lammps", "stage-2/equil_rg.dat"],
+      "parameters": {
+        "software": "LAMMPS",
+        "lammps_cmd": "/gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -sf gpu",
+        "minimization_etol": 1e-6,
+        "minimization_ftol": 1e-8,
+        "minimization_maxiter": 10000,
+        "thermostat": "Langevin",
+        "temperature": 1.0,
+        "damping_gamma": 1.0,
+        "timestep": 0.005,
+        "equilibration_steps": 2000000,
+        "equilibration_tau": 10000,
+        "forward_files": ["in.equil", "N50.data"],
+        "backward_files": ["equil.restart", "log.lammps", "equil_rg.dat", "log", "err"]
+      },
+      "success_criteria": "No LOST ATOMS error in log; temperature stable at T=1.0 +/- 0.05; R_g trace shows no monotonic drift over last 50% of equilibration",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    },
+    {
+      "id": "stage-3",
+      "name": "Production and R_g Measurement",
+      "status": "pending",
+      "depends_on": ["stage-2"],
+      "backend": "hpc-xjtlu",
+      "inputs": ["stage-2/equil.restart"],
+      "outputs": ["stage-3/rg_timeseries.dat", "stage-3/log.lammps"],
+      "parameters": {
+        "software": "LAMMPS",
+        "lammps_cmd": "/gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -sf gpu",
+        "thermostat": "Langevin",
+        "temperature": 1.0,
+        "damping_gamma": 1.0,
+        "timestep": 0.005,
+        "production_steps": 2000000,
+        "production_tau": 10000,
+        "rg_sampling_interval_steps": 20000,
+        "rg_sampling_interval_tau": 100,
+        "expected_samples": 100,
+        "forward_files": ["in.production", "equil.restart"],
+        "backward_files": ["rg_timeseries.dat", "log.lammps", "log", "err"]
+      },
+      "success_criteria": ">= 50 approximately uncorrelated R_g samples; standard error of mean R_g < 5% of mean",
+      "started_at": null,
+      "completed_at": null,
+      "retry_count": 0,
+      "last_error": null,
+      "running_process": null
+    }
+  ]
+}
