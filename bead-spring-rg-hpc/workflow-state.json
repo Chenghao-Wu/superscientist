@@ -1,10 +1,10 @@
 {
-  "workflow_id": "bead-spring-rg-hpc-2026-04-01",
+  "workflow_id": "bead-spring-rg-hpc-2026-04-02",
   "version": 1,
-  "created": "2026-04-01T00:00:00Z",
-  "updated": "2026-04-01T00:00:00Z",
-  "experiment_design": "docs/superscientist/specs/2026-04-01-bead-spring-rg-hpc-design.md",
-  "workflow_plan": "docs/superscientist/plans/2026-04-01-bead-spring-rg-hpc.md",
+  "created": "2026-04-02T00:00:00Z",
+  "updated": "2026-04-02T00:00:00Z",
+  "experiment_design": "docs/superscientist/specs/2026-04-02-bead-spring-rg-hpc-design.md",
+  "workflow_plan": "docs/superscientist/plans/2026-04-02-bead-spring-rg-hpc.md",
   "amendments": [],
   "default_backend": "local",
   "backend_profiles": {
@@ -15,15 +15,15 @@
         "context_type": "LocalContext"
       }
     },
-    "hpc-xjtlu": {
+    "hpc-slurm": {
       "type": "remote",
-      "config_path": "dpdisp-submit/XJTLU_XEC.json",
+      "batch_type": "Slurm",
+      "config_path": "bead-spring-rg-hpc/dpdisp_hpc.json",
       "resource_defaults": {
-        "queue_name": "gpu4090",
         "number_node": 1,
         "cpu_per_node": 1,
         "gpu_per_node": 1,
-        "custom_flags": ["--gres=gpu:1", "--qos=4gpus", "--mem-per-gpu=10G"],
+        "queue_name": "gpu4090",
         "group_size": 1
       }
     }
@@ -39,14 +39,14 @@
       "outputs": ["stage-1/N50.data"],
       "parameters": {
         "software": "AutoPoly",
-        "method": "BeadSpringPolymer.kremer_grest()",
+        "method": "BeadSpringPolymer",
         "n_chains": 1,
         "n_beads": 50,
         "topology": "linear",
         "box_size_sigma": 18.0,
-        "placement": "saw_generate"
+        "placement": "saw"
       },
-      "success_criteria": "Data file written; max bond length < 1.35 sigma; box length >= 18 sigma",
+      "success_criteria": "stage-1/N50.data exists; max bond length < 1.35 sigma; box length >= 18 sigma",
       "started_at": null,
       "completed_at": null,
       "retry_count": 0,
@@ -58,12 +58,14 @@
       "name": "Minimization and Equilibration",
       "status": "pending",
       "depends_on": ["stage-1"],
-      "backend": "hpc-xjtlu",
+      "backend": "hpc-slurm",
       "inputs": ["stage-1/N50.data"],
       "outputs": ["stage-2/equil.restart", "stage-2/log.lammps", "stage-2/equil_rg.dat"],
       "parameters": {
         "software": "LAMMPS",
-        "lammps_cmd": "/gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -sf gpu",
+        "lammps_binary": "/gpfs/home/che/zhenghaowu/lammps-install/bin/lmp",
+        "lammps_flags": "-k on g 1 -sf kk",
+        "kokkos_verified": false,
         "minimization_etol": 1e-6,
         "minimization_ftol": 1e-8,
         "minimization_maxiter": 10000,
@@ -73,10 +75,13 @@
         "timestep": 0.005,
         "equilibration_steps": 2000000,
         "equilibration_tau": 10000,
-        "forward_files": ["in.equil", "N50.data"],
-        "backward_files": ["equil.restart", "log.lammps", "equil_rg.dat", "log", "err"]
+        "slurm_partition": "gpu4090",
+        "slurm_qos": "4gpus",
+        "slurm_ntasks": 1,
+        "slurm_cpus_per_task": 1,
+        "slurm_gres": "gpu:1"
       },
-      "success_criteria": "No LOST ATOMS error in log; temperature stable at T=1.0 +/- 0.05; R_g trace shows no monotonic drift over last 50% of equilibration",
+      "success_criteria": "No LOST ATOMS error in log.lammps; temperature stable at T=1.0 +/- 0.05; R_g trace in equil_rg.dat shows no monotonic drift over last 50% of equilibration",
       "started_at": null,
       "completed_at": null,
       "retry_count": 0,
@@ -88,12 +93,13 @@
       "name": "Production and R_g Measurement",
       "status": "pending",
       "depends_on": ["stage-2"],
-      "backend": "hpc-xjtlu",
+      "backend": "hpc-slurm",
       "inputs": ["stage-2/equil.restart"],
       "outputs": ["stage-3/rg_timeseries.dat", "stage-3/log.lammps"],
       "parameters": {
         "software": "LAMMPS",
-        "lammps_cmd": "/gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -sf gpu",
+        "lammps_binary": "/gpfs/home/che/zhenghaowu/lammps-install/bin/lmp",
+        "lammps_flags": "-k on g 1 -sf kk",
         "thermostat": "Langevin",
         "temperature": 1.0,
         "damping_gamma": 1.0,
@@ -103,8 +109,11 @@
         "rg_sampling_interval_steps": 20000,
         "rg_sampling_interval_tau": 100,
         "expected_samples": 100,
-        "forward_files": ["in.production", "equil.restart"],
-        "backward_files": ["rg_timeseries.dat", "log.lammps", "log", "err"]
+        "slurm_partition": "gpu4090",
+        "slurm_qos": "4gpus",
+        "slurm_ntasks": 1,
+        "slurm_cpus_per_task": 1,
+        "slurm_gres": "gpu:1"
       },
       "success_criteria": ">= 50 approximately uncorrelated R_g samples; standard error of mean R_g < 5% of mean",
       "started_at": null,
