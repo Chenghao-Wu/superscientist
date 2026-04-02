@@ -1,8 +1,9 @@
 {
   "workflow_id": "bead-spring-rg-hpc-2026-04-02",
   "version": 1,
+  "workflow_status": "completed",
   "created": "2026-04-02T00:00:00Z",
-  "updated": "2026-04-02T00:00:00Z",
+  "updated": "2026-04-02T00:22:00Z",
   "experiment_design": "docs/superscientist/specs/2026-04-02-bead-spring-rg-hpc-design.md",
   "workflow_plan": "docs/superscientist/plans/2026-04-02-bead-spring-rg-hpc.md",
   "amendments": [],
@@ -32,7 +33,7 @@
     {
       "id": "stage-1",
       "name": "Structure Generation",
-      "status": "pending",
+      "status": "completed",
       "depends_on": [],
       "backend": "local",
       "inputs": [],
@@ -47,8 +48,8 @@
         "placement": "saw"
       },
       "success_criteria": "stage-1/N50.data exists; max bond length < 1.35 sigma; box length >= 18 sigma",
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-04-02T00:02:00Z",
+      "completed_at": "2026-04-02T00:03:00Z",
       "retry_count": 0,
       "last_error": null,
       "running_process": null
@@ -56,7 +57,7 @@
     {
       "id": "stage-2",
       "name": "Minimization and Equilibration",
-      "status": "pending",
+      "status": "completed",
       "depends_on": ["stage-1"],
       "backend": "hpc-slurm",
       "inputs": ["stage-1/N50.data"],
@@ -82,16 +83,23 @@
         "slurm_gres": "gpu:1"
       },
       "success_criteria": "No LOST ATOMS error in log.lammps; temperature stable at T=1.0 +/- 0.05; R_g trace in equil_rg.dat shows no monotonic drift over last 50% of equilibration",
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-04-02T00:05:00Z",
+      "completed_at": "2026-04-02T00:12:00Z",
       "retry_count": 0,
       "last_error": null,
-      "running_process": null
+      "running_process": {
+        "tmux_session": "dpdisp_stage-2",
+        "wrapper_script": "stage-2/dpdisp-run.sh",
+        "done_marker": "stage-2/DPDISP_DONE",
+        "exit_code_file": "stage-2/DPDISP_EXIT_CODE",
+        "recovery_attempted": false,
+        "launched_at": "2026-04-02T00:05:00Z"
+      }
     },
     {
       "id": "stage-3",
       "name": "Production and R_g Measurement",
-      "status": "pending",
+      "status": "completed",
       "depends_on": ["stage-2"],
       "backend": "hpc-slurm",
       "inputs": ["stage-2/equil.restart"],
@@ -116,11 +124,18 @@
         "slurm_gres": "gpu:1"
       },
       "success_criteria": ">= 50 approximately uncorrelated R_g samples; standard error of mean R_g < 5% of mean",
-      "started_at": null,
-      "completed_at": null,
+      "started_at": "2026-04-02T00:14:00Z",
+      "completed_at": "2026-04-02T00:21:00Z",
       "retry_count": 0,
       "last_error": null,
-      "running_process": null
+      "running_process": {
+        "tmux_session": "dpdisp_stage-3",
+        "wrapper_script": "stage-3/dpdisp-run.sh",
+        "done_marker": "stage-3/DPDISP_DONE",
+        "exit_code_file": "stage-3/DPDISP_EXIT_CODE",
+        "recovery_attempted": false,
+        "launched_at": "2026-04-02T00:14:00Z"
+      }
     }
   ]
 }

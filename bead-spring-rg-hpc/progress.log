@@ -1,1 +1,25 @@
 [2026-04-02 00:00] Workflow created: bead-spring-rg-hpc-2026-04-02. Stages: 3 total, all pending.
+[2026-04-02 00:01] stage-1 (Structure Generation): status -> ready (no dependencies)
+[2026-04-02 00:02] stage-1 (Structure Generation): status -> preparing. Dispatching subagent.
+[2026-04-02 00:03] stage-1 (Structure Generation): status -> post_processing. Invoking result-verification.
+[2026-04-02 00:03] stage-1 (Structure Generation): status -> completed. N50.data: 50 atoms, 49 bonds, box=18.0 sigma, max_bond=0.9710 sigma.
+[2026-04-02 00:04] stage-2 (Minimization and Equilibration): status -> ready (stage-1 completed).
+[2026-04-02 00:05] stage-2 (Minimization and Equilibration): status -> preparing. Dispatching subagent (HPC async).
+[2026-04-02 00:06] stage-2 (Minimization and Equilibration): status -> running (tmux: dpdisp_stage-2). SLURM job submitted to gpu4090.
+[2026-04-02 00:07] stage-2: polling — tmux alive, SLURM job running on gpu4090.
+[2026-04-02 00:08] stage-2: polling — tmux alive, waiting for SLURM job.
+[2026-04-02 00:09] stage-2: polling — tmux alive.
+[2026-04-02 00:10] stage-2: polling — tmux alive.
+[2026-04-02 00:11] stage-2: polling — tmux alive.
+[2026-04-02 00:12] stage-2 (Minimization and Equilibration): DPDISP_DONE exit=0. status -> post_processing. Invoking result-verification.
+[2026-04-02 00:12] stage-2 (Minimization and Equilibration): status -> completed. T_mean=1.0056, R_g drift=0.19 sigma (last 50%), 101 samples. Wall time 0:06:21. KOKKOS confirmed working. Comm cutoff warning noted (benign).
+[2026-04-02 00:13] stage-3 (Production and R_g Measurement): status -> ready (stage-2 completed).
+[2026-04-02 00:14] stage-3 (Production and R_g Measurement): status -> preparing. Dispatching subagent (HPC async).
+[2026-04-02 00:15] stage-3 (Production and R_g Measurement): status -> running (tmux: dpdisp_stage-3). SLURM job submitted to gpu4090.
+[2026-04-02 00:16] stage-3: polling — tmux alive.
+[2026-04-02 00:17] stage-3: polling — tmux alive.
+[2026-04-02 00:18] stage-3: polling — tmux alive.
+[2026-04-02 00:19] stage-3: polling — tmux alive.
+[2026-04-02 00:20] stage-3 (Production and R_g Measurement): DPDISP_DONE exit=0. status -> post_processing. Invoking result-verification.
+[2026-04-02 00:21] stage-3 (Production and R_g Measurement): status -> completed. Mean R_g=4.798 sigma, SEM=2.88% (corrected), N_eff~46, tau_int~110 tau. Wall time 0:05:03.
+[2026-04-02 00:22] Workflow completed. All 3 stages verified. Report: docs/superscientist/reports/2026-04-02-bead-spring-rg-hpc-report.md
