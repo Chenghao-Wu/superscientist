@@ -74,7 +74,9 @@ digraph experiment_design {
   - What system? (material, molecule, polymer — specific composition, structure, size)
   - What property? (Tg, diffusion, mechanical, phase behavior — and how measured)
   - Why? (reproduce known result, predict new property, validate method)
-  - What resources? (CPU/GPU, software experience, timeline)
+  - What compute backend? (local machine or HPC cluster)
+    If HPC: queue/partition name, GPU or CPU (and count per node), number of nodes.
+    Remind user they can specify scheduler-specific flags and per-stage resource overrides.
 - Prefer multiple choice when possible: "Are you computing (a) bulk Tg from density vs. T, (b) dynamic Tg from MSD, or (c) both?"
 - **Only one question per message** — if a topic needs more exploration, break it into multiple messages
 - Do NOT present any design content until you have enough answers to propose approaches
