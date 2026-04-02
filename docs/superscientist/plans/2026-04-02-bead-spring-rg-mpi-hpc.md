@@ -25,8 +25,8 @@
 ### Stage 2: Minimization and Equilibration
 - **Dependencies:** stage-1
 - **Inputs:** `stage-1/N50.data`
+- **prepend_script:** `module load openmpi/5.0.7-gcc-9.5.0-2ehcosg` (required for mpirun), then `mpirun -np 2 /gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -k on g 1 -sf kk -h > /dev/null 2>&1 || exit 1`
 - **Commands:** `mpirun -np 2 /gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -k on g 1 -sf kk -in in.equil`
-- **prepend_script:** `mpirun -np 2 /gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -k on g 1 -sf kk -h > /dev/null 2>&1 || exit 1`
 - **Outputs:** `stage-2/equil.restart`, `stage-2/log.lammps`, `stage-2/equil_rg.dat`
 - **Success criteria:** No LOST ATOMS error in log.lammps; temperature stable at T=1.0 +/- 0.05; R_g trace shows no monotonic drift over last 50% of equilibration
 - **Estimated walltime:** ~5 min compute + queue wait
@@ -36,6 +36,7 @@
 ### Stage 3: Production and R_g Measurement
 - **Dependencies:** stage-2
 - **Inputs:** `stage-2/equil.restart`
+- **prepend_script:** `module load openmpi/5.0.7-gcc-9.5.0-2ehcosg` (required for mpirun)
 - **Commands:** `mpirun -np 2 /gpfs/home/che/zhenghaowu/lammps-install/bin/lmp -k on g 1 -sf kk -in in.production`
 - **Outputs:** `stage-3/rg_timeseries.dat`, `stage-3/log.lammps`
 - **Success criteria:** >= 50 approximately uncorrelated R_g samples; standard error of mean R_g < 5% of mean
