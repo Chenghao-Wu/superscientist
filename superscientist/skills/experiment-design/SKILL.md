@@ -203,6 +203,8 @@ If unvalidated: include validation stage in workflow.]
 
 ## Resource Estimate
 [Total walltime, storage, memory.]
+[If HPC: backend type, queue/partition name, GPU/CPU and count per node, number of nodes.
+Scheduler-specific flags if any. Per-stage resource overrides if any.]
 ```
 
 ## Red Flags — STOP and Reconsider
