@@ -230,21 +230,27 @@ All computations are dispatched through DPDispatcher via the `superscientist:com
 
 ### Poll Protocol
 
+The orchestrator monitors async processes using a **blocking background wait**, not a manual poll loop:
+
+```bash
+# run_in_background: true, timeout: 600000
+while [ ! -f "stage-N/DPDISP_DONE" ]; do sleep 30; done; cat stage-N/DPDISP_EXIT_CODE
+```
+
+The orchestrator is auto-notified on completion. Decision logic on notification:
+
 ```
 if DPDISP_DONE marker exists:
   read DPDISP_EXIT_CODE
   if 0: transition to post_processing
   else: transition to failed
-else if tmux session alive (tmux has-session -t dpdisp_stage-N):
-  still running — log progress note
-else (tmux gone, no marker):
-  if recovery_attempted is false:
-    re-launch dpdisp-run.sh in new tmux session
-    set recovery_attempted: true
-    DPDispatcher idempotent recovery resumes monitoring
-  else:
-    transition to failed — "monitoring process died twice"
 ```
+
+If the background wait is lost (session boundary), `session-resume` Step 5 handles recovery:
+- tmux alive → re-establish background monitoring
+- tmux gone + `DPDISP_DONE` → process result immediately
+- tmux gone + no `DPDISP_DONE` + `recovery_attempted: false` → re-launch, re-monitor
+- tmux gone + no `DPDISP_DONE` + `recovery_attempted: true` → mark failed
 
 ### Quick Computations (sync path — local backend < 2 min)
 
