@@ -205,8 +205,45 @@ re-establish background monitoring before dispatching any new stages:
 
 ## Validation
 
-Run a 3-stage bead-spring polymer workflow (the existing test case) and verify:
-1. After stage-1 completes, orchestrator dispatches stage-2 without user input
-2. After stage-2 async job completes, orchestrator processes result and dispatches stage-3 without user input
-3. After stage-3 completes, orchestrator invokes workflow-completion without user input
-4. Progress.log shows continuous execution with no gaps between stages (except async wait time)
+Two-phase validation: local test for stage-boundary stall (Problem A), then HPC test for polling death (Problem D).
+
+### Phase 1: Local 6-Stage Test (Problem A)
+
+Bead-spring polymer equilibration quality workflow. N=50 Kremer-Grest chain, 6 stages, all sync on local backend. Total runtime ~25 seconds.
+
+| Stage | Name | Type | Runtime | Success Criteria |
+|---|---|---|---|---|
+| 1 | Structure generation | AutoPoly (sync) | ~5s | N50.data exists, 50 atoms, 49 bonds, max bond < 1.35 sigma |
+| 2 | Energy minimization | LAMMPS CG (sync) | ~2s | Energy converged (etol < 1e-6), minimized.restart produced |
+| 3 | NVT equilibration | LAMMPS 500k steps (sync) | ~3s | T within 1.0 +/- 0.1, no lost atoms, equil.restart produced |
+| 4 | Equilibration validation | Python analysis (sync) | ~2s | Parse thermo: T_mean, T_std, PE drift < 5% over last half. Output: equil_check.json |
+| 5 | NVT production | LAMMPS 2M steps (sync) | ~7s | 100+ R_g samples, no lost atoms, rg_timeseries.dat produced |
+| 6 | R_g analysis + plot | Python/matplotlib (sync) | ~3s | Mean R_g, SEM, N_eff, autocorrelation computed. rg_plot.png + rg_statistics.json produced |
+
+**Dependency chain:** 1 → 2 → 3 → 4 → 5 → 6 (linear)
+
+**Pass criteria:**
+1. All 6 stages complete without user input (5 stage-boundary transitions)
+2. Orchestrator invokes workflow-completion after stage-6 without user input
+3. progress.log shows continuous execution — no gaps between stages, no "waiting for user" entries
+4. All success criteria met per workflow-state.json
+
+### Phase 2: HPC 6-Stage Test (Problem D)
+
+Same 6-stage workflow on HPC backend (Slurm, gpu4090 partition). Stages 3 and 5 dispatch via DPDispatcher to remote, triggering async mode with background wait.
+
+| Stage | Mode | Tests |
+|---|---|---|
+| 1 | Local sync | sync → sync boundary |
+| 2 | Local sync | sync → async transition (next stage is remote) |
+| 3 | Remote async | Background wait → notification → continuation |
+| 4 | Local sync | Post-async → sync boundary |
+| 5 | Remote async | Background wait → notification → continuation |
+| 6 | Local sync | Post-async → workflow-completion |
+
+**Pass criteria:**
+1. All 6 stages complete without user input
+2. Stages 3 and 5 use blocking background wait (not manual poll loop)
+3. After background wait notification, orchestrator immediately proceeds to verification and next stage
+4. If background wait times out (job > 10 min), orchestrator ends session cleanly and session-resume picks up
+5. progress.log shows continuous execution across sync/async boundaries
