@@ -54,6 +54,8 @@ The user approved the workflow plan. That approval covers ALL stages. Do not ask
 ```dot
 digraph execution {
     rankdir=TB;
+    "Step 0: Check autonomous mode" [shape=diamond];
+    "Launch tmux wrapper\n(STOP after)" [shape=box];
     "Pre-flight (init.sh + read state)" [shape=box];
     "Resolve dependencies" [shape=box];
     "Next actionable stage?" [shape=diamond];
@@ -74,6 +76,9 @@ digraph execution {
     "Invoke workflow-completion" [shape=box];
     "End session cleanly" [shape=box];
 
+    "Step 0: Check autonomous mode" -> "Launch tmux wrapper\n(STOP after)" [label="autonomous=true\n& no tmux session"];
+    "Step 0: Check autonomous mode" -> "Pre-flight (init.sh + read state)" [label="autonomous=false\nor tmux exists"];
+    "Launch tmux wrapper\n(STOP after)" -> "End session cleanly";
     "Pre-flight (init.sh + read state)" -> "Resolve dependencies";
     "Resolve dependencies" -> "Next actionable stage?";
     "Next actionable stage?" -> "Dispatch subagent" [label="yes (first ready by array order)"];
@@ -99,6 +104,55 @@ digraph execution {
     "All completed?" -> "End session cleanly" [label="no (blocked/waiting)"];
 }
 ```
+
+## Step 0: Check Autonomous Mode
+
+This step is a gate, not part of the execution loop. It runs once before Pre-Flight.
+
+1. Read `session_config.autonomous` from `workflow-state.json`.
+2. If `false` → skip to Pre-Flight.
+3. If `true`:
+
+   **a. Check if wrapper is already running:**
+   - Derive tmux session name: `workflow-runner-{workflow_id}` (from `workflow-state.json`).
+   - Run: `tmux has-session -t "workflow-runner-{workflow_id}" 2>/dev/null`
+   - If the tmux session exists → the wrapper launched this session. Skip Step 0 entirely, proceed to Pre-Flight. This prevents re-launching the wrapper on every session the wrapper creates.
+
+   **b. Preflight checks:**
+   - `command -v tmux` → if missing, FAIL: "tmux required for autonomous mode. Install it or set `autonomous: false` in `workflow-state.json`."
+   - Verify `run-workflow.sh` exists at the superscientist plugin path (`superscientist/run-workflow.sh` relative to the plugin root, i.e., the parent of `skills/executing-workflows/`). If missing, FAIL: "`run-workflow.sh` not found. Autonomous session chaining not installed."
+
+   **c. Permissions warning:**
+   - Check if `.claude/settings.json` or `.claude/settings.local.json` exists with tool permissions configured.
+   - If no settings file found, WARN (do not block): "No pre-approved permissions detected. Autonomous sessions may hang on permission prompts. Configure `.claude/settings.json` before proceeding."
+
+   **d. Launch wrapper:**
+   - Resolve `run-workflow.sh` path from the superscientist plugin directory.
+   - Derive tmux session name: `workflow-runner-{workflow_id}`.
+   ```bash
+   tmux new-session -d -s "workflow-runner-${WORKFLOW_ID}" \
+     "bash ${RUN_WORKFLOW_SH} '$(pwd)' 20"
+   ```
+   - Args: current working directory, max 20 sessions (default).
+
+   **e. Log to `progress.log`:**
+   ```
+   [TIMESTAMP] Autonomous mode activated. tmux session: workflow-runner-{workflow_id}
+   ```
+
+   **f. Inform user:**
+   ```
+   Autonomous session chaining launched.
+
+   Monitor:  tail -f progress.log
+   Pause:    touch PAUSE
+   Resume:   rm PAUSE
+   Attach:   tmux attach -t workflow-runner-{workflow_id}
+   Stop:     tmux kill-session -t workflow-runner-{workflow_id}
+   ```
+   (Substitute the actual tmux session name.)
+
+   **g. STOP.** Do not execute stages in this session. The wrapper will launch the first `claude -p` session. Return control to the user.
 
 ## Pre-Flight
 
