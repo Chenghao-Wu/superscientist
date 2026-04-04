@@ -37,7 +37,7 @@ The user approved the workflow plan. That approval covers ALL stages. Do not ask
 | Phase | Status transitions | Action |
 |---|---|---|
 | Dispatch (sync) | `ready` -> `preparing` -> `post_processing` -> `completed`/`failed` | Subagent runs inline, verify immediately |
-| Dispatch (async) | `ready` -> `preparing` -> `running` -> `post_processing` -> `completed`/`failed` | tmux wrapper, poll for DPDISP_DONE |
+| Dispatch (async) | `ready` -> `preparing` -> `running` -> `post_processing` -> `completed`/`failed` | tmux wrapper, background wait for DPDISP_DONE |
 | Retry | `failed` -> `ready` (increment `retry_count`) | Max 3 retries (local) / 5 retries (remote), then stop |
 | Dependency met | `pending` -> `ready` | Run after each stage completes |
 
@@ -61,9 +61,9 @@ digraph execution {
     "Sync or async?" [shape=diamond];
     "Run sync, get result" [shape=box];
     "Launch async, record tmux" [shape=box];
-    "Poll (60s interval)" [shape=box];
+    "Background wait\n(run_in_background)" [shape=box];
     "Done?" [shape=diamond];
-    "Set post_processing,\ninvoke result-verification" [shape=box];
+    "Verify, complete,\nand continue" [shape=box];
     "Passed?" [shape=diamond];
     "Mark completed,\nresolve dependencies" [shape=box];
     "Mark failed,\ninvoke systematic-debugging" [shape=box];
@@ -81,19 +81,19 @@ digraph execution {
     "Dispatch subagent" -> "Sync or async?";
     "Sync or async?" -> "Run sync, get result" [label="local < 2 min"];
     "Sync or async?" -> "Launch async, record tmux" [label="remote or > 2 min"];
-    "Run sync, get result" -> "Set post_processing,\ninvoke result-verification";
-    "Launch async, record tmux" -> "Poll (60s interval)";
-    "Poll (60s interval)" -> "Done?";
-    "Done?" -> "Set post_processing,\ninvoke result-verification" [label="DPDISP_DONE"];
-    "Done?" -> "Poll (60s interval)" [label="tmux alive"];
+    "Run sync, get result" -> "Verify, complete,\nand continue";
+    "Launch async, record tmux" -> "Background wait\n(run_in_background)";
+    "Background wait\n(run_in_background)" -> "Done?";
+    "Done?" -> "Verify, complete,\nand continue" [label="DPDISP_DONE"];
+    "Done?" -> "Background wait\n(run_in_background)" [label="timeout, re-wait"];
     "Done?" -> "Mark failed,\ninvoke systematic-debugging" [label="tmux dead,\nno marker"];
-    "Set post_processing,\ninvoke result-verification" -> "Passed?";
+    "Verify, complete,\nand continue" -> "Passed?";
     "Passed?" -> "Mark completed,\nresolve dependencies" [label="yes"];
     "Passed?" -> "Mark failed,\ninvoke systematic-debugging" [label="no"];
     "Mark completed,\nresolve dependencies" -> "Next actionable stage?";
-    "Mark failed,\ninvoke systematic-debugging" -> "retry_count < 3?\nFix applied?";
-    "retry_count < 3?\nFix applied?" -> "failed -> ready\n(increment retry_count)" [label="yes"];
-    "retry_count < 3?\nFix applied?" -> "STOP: ask user" [label="no"];
+    "Mark failed,\ninvoke systematic-debugging" -> "retry_count < limit?\n(3 local / 5 remote)\nFix applied?";
+    "retry_count < limit?\n(3 local / 5 remote)\nFix applied?" -> "failed -> ready\n(increment retry_count)" [label="yes"];
+    "retry_count < limit?\n(3 local / 5 remote)\nFix applied?" -> "STOP: ask user" [label="no"];
     "failed -> ready\n(increment retry_count)" -> "Next actionable stage?";
     "All completed?" -> "Invoke workflow-completion" [label="yes"];
     "All completed?" -> "End session cleanly" [label="no (blocked/waiting)"];
