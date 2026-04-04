@@ -304,3 +304,10 @@ After `systematic-debugging` identifies and applies a fix:
 | "compute-backend is overkill for this simple script" | compute-backend is mandatory for every stage, regardless of complexity. |
 | "I'll test the script first by running it directly, then use DPDispatcher" | **Never run the command directly.** Use `dargs check` and `--dry-run` to validate. |
 | "The subagent already ran the job, I just need to check outputs" | If compute-backend was not invoked, the stage is not complete. The job must be re-run through DPDispatcher. |
+| "I've completed this stage, let me update the user" | Update progress.log. The user reads logs, not conversation. Continue. |
+| "Let me show the user this result" | Log to progress.log and dispatch the next stage. |
+| "I should check if the user wants to proceed" | The user approved the workflow plan. That approval covers all stages. Continue. |
+| "Stage N is done, let me summarize" | Summarize in progress.log, not in conversation. Dispatch the next stage. |
+| "The user might want to review before continuing" | If verification passed, the stage is done. The user reviews the final report. |
+| "I'll wait for the user to acknowledge" | Acknowledgment is not a step in the execution loop. Continue. |
+| "The background job just finished, let me tell the user" | Process the result. Update state. Continue the loop. The notification is for you, not the user. |
