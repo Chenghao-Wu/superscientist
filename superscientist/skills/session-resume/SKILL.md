@@ -71,6 +71,15 @@ Append session start entry to `progress.log`:
 
 Resume work via `superscientist:executing-workflows`.
 
+**If a `running` stage was identified in Step 5 with tmux still alive**, re-establish background monitoring before dispatching any new stages:
+
+```bash
+# run_in_background: true, timeout: 600000
+while [ ! -f "stage-N/DPDISP_DONE" ]; do sleep 30; done; cat stage-N/DPDISP_EXIT_CODE
+```
+
+The orchestrator will be auto-notified when the job completes, then resume via `superscientist:executing-workflows` Step 5 continuation.
+
 ## Failure Handling
 
 | Failure | Action |
