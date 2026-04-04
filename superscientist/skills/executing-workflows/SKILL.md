@@ -127,6 +127,8 @@ Note: `skipped` is set only via user decision through the amendment protocol in 
 
 **"First" stage:** When multiple stages are `ready`, select the first by array order in `workflow-state.json`.
 
+**→ After resolving dependencies, return to stage selection. Do not pause.**
+
 ## Per-Stage Execution
 
 ### 1. Select Stage
@@ -192,6 +194,8 @@ The compute-backend skill determines sync vs. async based on the backend type an
 **Sync** (local, < 2 min): Subagent returns inline results. Status stays `preparing` — skip `running`. Proceed directly to step 5.
 
 **Async** (remote, or local > 2 min): Subagent reports tmux session name and submission.json path. Update status: `preparing` -> `running`. Record `running_process` in `workflow-state.json` per the schema in `checkpoint-management`. Log: `[timestamp] stage-N: status -> running (tmux: dpdisp_stage-N)`.
+
+**→ Continue to Step 4 (async) or Step 5 (sync). Do not report to the user.**
 
 ### 4. Monitor Background Process (async only)
 
