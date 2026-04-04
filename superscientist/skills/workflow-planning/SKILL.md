@@ -56,6 +56,18 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
   "experiment_design": "<relative-path-to-design-doc>",
   "workflow_plan": "<relative-path-to-plan-doc>",
   "amendments": [],
+  "session_config": {
+    "session_budget": 6,
+    "session_id": null,
+    "session_cost": 0,
+    "exit_reason": null,
+    "stage_weights": {
+      "sync": 1,
+      "async": 1.5,
+      "error_cycle": 2,
+      "diagnostic": 2
+    }
+  },
   "default_backend": "local",
   "backend_profiles": {
     "local": {
@@ -112,6 +124,7 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
 - Top-level MUST include `default_backend` and `backend_profiles` (at minimum a `"local"` profile)
 - Stage `backend` field is optional — `null` means use `default_backend`
 - `backend_profiles` with `type: "remote"` must include `batch_type` (the scheduler type from the machine config, e.g., `"Slurm"`, `"PBS"`, `"LSF"`, `"SGE"`), `config_path` (path to external machine config — validated for existence, never read), and `resource_defaults`
+- Top-level MUST include `session_config` with `session_budget` (default 6), `session_id` (null), `session_cost` (0), `exit_reason` (null), and `stage_weights` (sync: 1, async: 1.5, error_cycle: 2, diagnostic: 2). User may adjust `session_budget` and `stage_weights` after planning.
 - Do NOT add extra fields (`description`, `known_pitfalls`, `safeguards`, `expected_walltime`, `execution_order`) — those belong in the design doc or plan doc, not the state file
 
 ### Step 4: Create `progress.log`
