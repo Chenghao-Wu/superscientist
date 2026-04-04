@@ -226,14 +226,30 @@ You will be auto-notified when the file appears. Do NOT sleep-and-check manually
 
 **→ After receiving notification, execute Step 5 immediately. Do not report to the user.**
 
-### 5. Verify and Complete
+### 5. Verify, Complete, and Continue
 
-Set status -> `post_processing`. Log and persist. Then invoke `superscientist:result-verification`.
+Set status → `post_processing`. Log and persist. Then invoke `superscientist:result-verification`.
 
-- **Passed:** Status -> `completed`. Set `completed_at`. Log. Run dependency resolution.
-- **Failed:** Status -> `failed`. Set `last_error`. Log. Invoke `superscientist:systematic-debugging`.
+- **Passed:** Status → `completed`. Set `completed_at`. Log.
+- **Failed:** Status → `failed`. Set `last_error`. Log. Invoke `superscientist:systematic-debugging`.
 
-Note: For sync flow, `post_processing` is set here (the only place). For async flow, it is set after poll detects `DPDISP_DONE` with exit 0.
+Note: For sync flow, `post_processing` is set here (the only place). For async flow, it is set after the background wait detects `DPDISP_DONE` with exit 0.
+
+**→ CONTINUATION (mandatory, no pauses):**
+
+After marking `completed`:
+- Run dependency resolution (`pending` → `ready` for stages whose dependencies are now met)
+- Any `ready` stages? → Return to Step 1 (Select Stage). Dispatch immediately.
+- All stages `completed` or `skipped`? → Invoke `superscientist:workflow-completion`.
+- No `ready`/`running` but uncompleted stages remain? → Workflow is blocked. Log and inform user.
+
+After `systematic-debugging` applies a fix and transitions `failed` → `ready` (with `retry_count` incremented):
+- Return to Step 1 (Select Stage). The retried stage is now `ready`.
+
+After the background wait (Step 4) delivers a completion notification:
+- Process the exit code per the table in Step 4. Then execute this same continuation block.
+
+**There is no "report to user" step. The loop continues until a terminal condition is reached.**
 
 ### 6. HPC Failure Diagnostics
 
@@ -253,13 +269,6 @@ When a remote backend stage fails, apply the two-level diagnostic model before r
    - This IS a normal retry — it goes through the standard `failed` -> `ready` -> `preparing` -> `running` flow and increments `retry_count`.
    - After the diagnostic run completes, read the downloaded `log`/`err` and invoke `systematic-debugging`.
 3. After `systematic-debugging` identifies the fix, dispatch the real fix retry with: "Reuse existing `submission.json` unless the fix requires parameter changes."
-
-## Workflow Termination
-
-**Check after each stage completes and dependency resolution runs:**
-
-- **All stages `completed` or `skipped`:** Invoke `superscientist:workflow-completion`.
-- **No `ready` or `running` stages, but uncompleted stages remain:** Workflow is blocked. Log and inform the user which stages are blocked and why.
 
 ## Retry Flow
 
