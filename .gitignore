@@ -1,6 +1,6 @@
-superpowers/
-doc/
-.claude/
-.DS_Store
-docs/
-dpdisp-submit/
+# Only superscientist/ and .gitignore are tracked
+# Everything else is local-only
+*
+!.gitignore
+!superscientist/
+!superscientist/**
