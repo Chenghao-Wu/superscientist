@@ -80,6 +80,22 @@ while [ ! -f "stage-N/DPDISP_DONE" ]; do sleep 30; done; cat stage-N/DPDISP_EXIT
 
 The orchestrator will be auto-notified when the job completes, then resume via `superscientist:executing-workflows` Step 5 continuation.
 
+### Step 8: Reset Session Budget
+
+Read `session_config` from `workflow-state.json`.
+
+1. If `exit_reason` from the previous session is not null, log it:
+   ```
+   [TIMESTAMP] Previous session ended: exit_reason=budget_exhausted, cost=5.5/6
+   ```
+   (Use actual values from `session_config.session_cost` and `session_config.session_budget`.)
+2. Set `session_id` to current ISO timestamp.
+3. Set `session_cost` to 0.
+4. Set `exit_reason` to null.
+5. Write updated `session_config` to `workflow-state.json`.
+
+This ensures every session starts with a fresh budget. The previous session's exit reason is logged before being cleared, preserving the audit trail in `progress.log`.
+
 ## Failure Handling
 
 | Failure | Action |
@@ -96,3 +112,4 @@ The orchestrator will be auto-notified when the job completes, then resume via `
 | "Let me just continue from here" | Complete the full protocol first. |
 | "init.sh passed last time, skip it" | Environment changes. Run it. |
 | "That tmux session is probably still running" | Check with `tmux has-session`. Don't assume. |
+| "The budget looks wrong, I'll skip the reset" | Reset is mandatory. The previous session's cost is stale. |
