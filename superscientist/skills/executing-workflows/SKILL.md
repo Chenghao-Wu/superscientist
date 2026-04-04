@@ -28,7 +28,7 @@ The user approved the workflow plan. That approval covers ALL stages. Do not ask
 1. Retry limit exceeded (3 local / 5 remote)
 2. Workflow blocked (no ready/running stages, uncompleted stages remain)
 3. Amendment needed (definitional field change requires user approval)
-4. Context limit — ONLY when the system has explicitly warned about approaching context limits. "The conversation feels long" is NOT a valid reason.
+4. Budget exhausted — `session_cost + estimated_next_weight > session_budget`. This is the ONLY context-related exit condition. "The conversation feels long" is NOT a valid reason. Check the numbers.
 
 **Violating the letter of this rule is violating the spirit of this rule.**
 
@@ -238,10 +238,23 @@ Note: For sync flow, `post_processing` is set here (the only place). For async f
 **→ CONTINUATION (mandatory, no pauses):**
 
 After marking `completed`:
-- Run dependency resolution (`pending` → `ready` for stages whose dependencies are now met)
-- Any `ready` stages? → Return to Step 1 (Select Stage). Dispatch immediately.
-- All stages `completed` or `skipped`? → Invoke `superscientist:workflow-completion`.
-- No `ready`/`running` but uncompleted stages remain? → Workflow is blocked. Log and inform user.
+1. **Budget accounting:**
+   - Classify the completed stage: `sync` (local, no errors, one attempt), `async` (remote/HPC or background wait, no errors), `error_cycle` (any retry occurred), or `diagnostic` (Level 2 reproduction run). If multiple apply, use the highest weight.
+   - Read `session_config` from `workflow-state.json`.
+   - Increment `session_cost` by the stage's weight from `stage_weights`.
+   - Write updated `session_cost` to `workflow-state.json`.
+   - Log: `[timestamp] stage-N: session_cost += {weight} ({classification}), total={session_cost}/{session_budget}`
+
+2. **Dependency resolution:** Advance `pending` → `ready` for stages whose dependencies are now met.
+
+3. **Next action decision:**
+   - All stages `completed` or `skipped`? → Set `exit_reason` to `"completed"`. Invoke `superscientist:workflow-completion`.
+   - No `ready`/`running` but uncompleted stages remain? → Workflow is blocked. Log and inform user.
+   - Any `ready` stages? → Estimate the next stage's weight (`sync` if local backend, `async` if remote). If `session_cost + estimated_next_weight > session_budget`:
+     - Set `exit_reason` to `"budget_exhausted"` in `workflow-state.json`.
+     - Log: `[timestamp] Session ending: budget exhausted (cost={session_cost}, budget={session_budget})`.
+     - **Stop execution.** Do not dispatch the next stage.
+   - Otherwise → Return to Step 1 (Select Stage). Dispatch immediately.
 
 After `systematic-debugging` applies a fix and transitions `failed` → `ready` (with `retry_count` incremented):
 - Return to Step 1 (Select Stage). The retried stage is now `ready`.
@@ -311,3 +324,5 @@ After `systematic-debugging` identifies and applies a fix:
 | "The user might want to review before continuing" | If verification passed, the stage is done. The user reviews the final report. |
 | "I'll wait for the user to acknowledge" | Acknowledgment is not a step in the execution loop. Continue. |
 | "The background job just finished, let me tell the user" | Process the result. Update state. Continue the loop. The notification is for you, not the user. |
+| "I've been running for a while, maybe I should stop" | Check `session_cost` against `session_budget`. If under budget, continue. Your feelings about session length are not a valid exit condition. |
+| "The budget check is overhead, I'll skip it this time" | Budget accounting is mandatory after every stage. Skipping it defeats autonomous session chaining. |
