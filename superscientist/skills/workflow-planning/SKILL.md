@@ -43,6 +43,15 @@ For each stage in the design, define:
 - Example: `stage-2/isotherm.csv`, `stage-3/output.log`
 - Stage 1 may write to a named directory if outputs are shared inputs (e.g., `structures/`)
 
+### Step 2b: Ask About Autonomous Mode
+
+After defining all stages, ask the user:
+
+> "This workflow has N stages. Enable autonomous session chaining? If yes, `executing-workflows` will launch a background runner that automatically chains Claude sessions until the workflow completes or blocks. Requires: tmux installed, tool permissions pre-approved in `.claude/settings.json`."
+
+- If the user says yes → set `session_config.autonomous: true` in the `workflow-state.json` created in Step 3.
+- If the user says no or skips → leave `session_config.autonomous: false` (the default).
+
 ### Step 3: Create `workflow-state.json`
 
 Create with all stages in `pending` status. Every stage MUST have all fields shown below — no optional fields, no extra fields.
@@ -57,6 +66,7 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
   "workflow_plan": "<relative-path-to-plan-doc>",
   "amendments": [],
   "session_config": {
+    "autonomous": false,
     "session_budget": 6,
     "session_id": null,
     "session_cost": 0,
@@ -125,6 +135,7 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
 - Stage `backend` field is optional — `null` means use `default_backend`
 - `backend_profiles` with `type: "remote"` must include `batch_type` (the scheduler type from the machine config, e.g., `"Slurm"`, `"PBS"`, `"LSF"`, `"SGE"`), `config_path` (path to external machine config — validated for existence, never read), and `resource_defaults`
 - Top-level MUST include `session_config` with `session_budget` (default 6), `session_id` (null), `session_cost` (0), `exit_reason` (null), and `stage_weights` (sync: 1, async: 1.5, error_cycle: 2, diagnostic: 2). User may adjust `session_budget` and `stage_weights` after planning.
+- `session_config.autonomous` is a boolean (default `false`). Set to `true` during planning when the user opts in to autonomous session chaining.
 - Do NOT add extra fields (`description`, `known_pitfalls`, `safeguards`, `expected_walltime`, `execution_order`) — those belong in the design doc or plan doc, not the state file
 
 ### Step 4: Create `progress.log`
