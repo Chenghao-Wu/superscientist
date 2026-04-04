@@ -93,7 +93,7 @@ while true; do
 
     # Run Claude with session timeout
     ( cd "$WORKFLOW_DIR" && timeout "$SESSION_TIMEOUT" \
-        claude -p "Resume the superscientist workflow." ) || true
+        claude -p "Invoke the superscientist:session-resume skill for the workflow in this directory." ) || true
 
     SESSION_END=$(date +%s)
     DURATION=$(( SESSION_END - SESSION_START ))
