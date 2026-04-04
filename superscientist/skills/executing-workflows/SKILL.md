@@ -15,6 +15,23 @@ Execute workflow stages sequentially, one subagent per stage. The orchestrator (
 
 **Persistence rule:** Every status transition must be written to `workflow-state.json` AND appended to `progress.log` *before* the next action.
 
+## The Autonomous Execution Law
+
+```
+AFTER EACH STAGE, YOU MUST IMMEDIATELY EXECUTE THE CONTINUATION STEPS IN STEP 5.
+THERE IS NO PAUSE POINT BETWEEN STAGES.
+```
+
+The user approved the workflow plan. That approval covers ALL stages. Do not ask for re-confirmation between stages. Do not report intermediate results in conversation. Do not summarize what just happened. Log to `progress.log` and continue.
+
+**The ONLY reasons to pause and inform the user:**
+1. Retry limit exceeded (3 local / 5 remote)
+2. Workflow blocked (no ready/running stages, uncompleted stages remain)
+3. Amendment needed (definitional field change requires user approval)
+4. Context limit — ONLY when the system has explicitly warned about approaching context limits. "The conversation feels long" is NOT a valid reason.
+
+**Violating the letter of this rule is violating the spirit of this rule.**
+
 ## Quick Reference
 
 | Phase | Status transitions | Action |
