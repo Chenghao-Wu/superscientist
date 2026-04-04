@@ -111,7 +111,7 @@ Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no
     "custom_flags": ["#SBATCH --qos=4gpus", "#SBATCH --mem-per-gpu=10G"],
     "module_list": ["cuda/12.0", "openmpi/4.1"],
     "source_list": ["/path/to/env_setup.sh"],
-    "prepend_script": ["bash validate_env.sh || exit 1"]
+    "prepend_script": ["bash stage-3/validate_env.sh || exit 1"]
   },
   "task_list": [
     {
@@ -129,8 +129,8 @@ Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no
 - `custom_flags`: Extra scheduler-header lines inserted **verbatim** by DPDispatcher. Each entry MUST include the scheduler prefix (e.g., `#SBATCH` for Slurm). See Custom Flags Validation below.
 - `module_list`: HPC modules loaded before the command runs.
 - `source_list`: Shell scripts sourced before the command. Does NOT abort on failure — use for non-critical environment setup only.
-- `prepend_script`: Shell lines executed before the task command. Use `|| exit 1` to abort on failure. Suitable for pre-flight validation (see Pre-flight Validation below).
-- `validate_env.sh`: Include in `forward_files` so it is uploaded to the remote.
+- `prepend_script`: Shell lines executed before the task command **at the submission root** (NOT inside `task_work_path`). Use `|| exit 1` to abort on failure. Since `forward_files` are placed under `task_work_path`, reference them with the path prefix: `bash stage-{id}/validate_env.sh`, not `bash validate_env.sh`. See Pre-flight Validation below.
+- `validate_env.sh`: Include in `forward_files` so it is uploaded to the remote under `task_work_path`.
 
 #### envsubst (conditional)
 
@@ -192,7 +192,7 @@ echo "ENV_VALIDATION_PASSED"
 ```
 
 2. Add `validate_env.sh` to `forward_files` so DPDispatcher uploads it to the remote.
-3. Add `"bash validate_env.sh || exit 1"` to the `prepend_script` array in `resources`.
+3. Add `"bash stage-{id}/validate_env.sh || exit 1"` to the `prepend_script` array in `resources`. The `stage-{id}` prefix is required because `prepend_script` runs at the submission root, while `forward_files` are placed under `task_work_path`.
 
 **Why `prepend_script` and not `source_list`:** DPDispatcher renders `source_list` entries as bare `source {file}` lines with no error checking. A failing `source` does not abort execution. `prepend_script` lines run as shell commands with explicit `|| exit 1`, which aborts the job immediately on failure.
 
@@ -332,6 +332,7 @@ The orchestrator chooses the mode based on the nature of the fix:
 | "I'll skip the dry-run, validation passed" | Dry-run catches path issues validation misses. Always run both. |
 | "This local job is fast, skip tmux" | Only skip tmux for local backend AND < 2 min expected runtime. |
 | "I'll set forward_files later" | Build the complete file list now. Missing files = failed job on remote. |
+| "I'll call `bash validate_env.sh` from prepend_script" | `prepend_script` runs at the submission root, not `task_work_path`. Use `bash stage-{id}/validate_env.sh` with the full path prefix. |
 | "Let me read submission.json to verify envsubst worked" | NEVER read after envsubst. It contains resolved secrets. |
 | "I'll write my own wrapper script" | Use the EXACT template. The orchestrator depends on `dpdisp-run.sh`, `DPDISP_DONE`, `DPDISP_EXIT_CODE`, and `dpdisp_stage-{id}` naming. |
 | "The key is `task` not `task_list`" | It is `task_list` (array). |
