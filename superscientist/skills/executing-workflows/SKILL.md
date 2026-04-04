@@ -379,4 +379,7 @@ After `systematic-debugging` identifies and applies a fix:
 | "I'll wait for the user to acknowledge" | Acknowledgment is not a step in the execution loop. Continue. |
 | "The background job just finished, let me tell the user" | Process the result. Update state. Continue the loop. The notification is for you, not the user. |
 | "I've been running for a while, maybe I should stop" | Check `session_cost` against `session_budget`. If under budget, continue. Your feelings about session length are not a valid exit condition. |
+| "Autonomous mode is on, but I'll execute stages anyway" | Step 0 said STOP. The wrapper handles execution. Return control to the user. |
+| "The tmux session exists, but I'll launch another one" | One wrapper per workflow. If `tmux has-session` succeeds, skip Step 0. |
+| "I'll check autonomous mode later" | Step 0 runs BEFORE Pre-Flight. It's a gate, not a suggestion. |
 | "The budget check is overhead, I'll skip it this time" | Budget accounting is mandatory after every stage. Skipping it defeats autonomous session chaining. |
