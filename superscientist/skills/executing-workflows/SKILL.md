@@ -199,28 +199,32 @@ The compute-backend skill determines sync vs. async based on the backend type an
 
 ### 4. Monitor Background Process (async only)
 
-Poll using the protocol from `checkpoint-management`:
+**DO NOT poll manually in a loop.** Use a blocking background wait:
 
 ```bash
-sleep 60 && \
-  if test -f "stage-N/DPDISP_DONE"; then
-    echo "STATUS=DONE"; cat stage-N/DPDISP_EXIT_CODE
-  elif tmux has-session -t dpdisp_stage-N 2>/dev/null; then
-    echo "STATUS=ALIVE"
-  else
-    echo "STATUS=DEAD"
-  fi
+# run_in_background: true, timeout: 600000
+while [ ! -f "stage-N/DPDISP_DONE" ]; do sleep 30; done; cat stage-N/DPDISP_EXIT_CODE
 ```
 
-| Result | Action |
-|---|---|
-| `DONE` + exit 0 | Status -> `post_processing`. Proceed to step 5. |
-| `DONE` + exit non-zero | Status -> `failed`. Set `last_error` from `stage-N/err` (if it exists — see HPC Failure Diagnostics below). Read `{workflow_root}/dpdispatcher.log` for DPDispatcher-level context. Invoke `systematic-debugging` with both `last_error` and relevant `dpdispatcher.log` entries. |
-| `ALIVE` | Log progress note. Continue polling. |
-| `DEAD` + `recovery_attempted: false` | Re-launch tmux: `tmux kill-session -t dpdisp_stage-N 2>/dev/null && tmux new-session -d -s dpdisp_stage-N "bash stage-N/dpdisp-run.sh"`. Set `recovery_attempted: true`. DPDispatcher resumes idempotently. |
-| `DEAD` + `recovery_attempted: true` | Status -> `failed`. `last_error`: "DPDispatcher monitoring died twice." Invoke `systematic-debugging`. |
+You will be auto-notified when the file appears. Do NOT sleep-and-check manually. Do NOT ask the user if the job is done.
 
-**Session boundary:** If context is getting long, log `[timestamp] Session ended. stage-N still running (tmux: dpdisp_stage-N).` and exit. `session-resume` handles recovery.
+**When you receive the completion notification:**
+
+| Exit code | Action |
+|---|---|
+| `0` | Status → `post_processing`. Invoke `superscientist:result-verification`. Execute continuation in Step 5. |
+| non-zero | Status → `failed`. Read `stage-N/err` (if exists) and `{workflow_root}/dpdispatcher.log`. Invoke `superscientist:systematic-debugging`. |
+
+**If the background wait times out or is lost** (no notification after 10 minutes):
+
+1. Run a single check: `test -f stage-N/DPDISP_DONE && cat stage-N/DPDISP_EXIT_CODE || echo "NOT_DONE"`
+2. If done → process the result (same as notification path above).
+3. If not done → the job is long-running. Log: `[timestamp] stage-N: async job still running. Ending session for session-resume.` End session cleanly.
+4. `session-resume` will pick up on next session start, check tmux state, and re-establish monitoring.
+
+**Do NOT dispatch other stages while waiting.** Execution is sequential.
+
+**→ After receiving notification, execute Step 5 immediately. Do not report to the user.**
 
 ### 5. Verify and Complete
 
