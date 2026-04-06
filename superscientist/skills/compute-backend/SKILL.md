@@ -11,7 +11,7 @@ Unified dispatch interface for superscientist workflow stages. All computations 
 
 **Core principle:** One code path. No branching between local bash wrappers and HPC submission. DPDispatcher handles everything.
 
-**NEVER run the computation command directly.** This means no `lmp < script`, no `bash script.sh`, no `python run.py`, no subprocess, no shell exec — nothing that bypasses `dpdisp submit`. Local backends use `batch_type: Shell`, which still runs through DPDispatcher. There are zero exceptions to this rule, regardless of how simple, local, or fast the job appears.
+**NEVER run the computation command directly.** This means no `bash script.sh`, no `python run.py`, no `command < input`, no subprocess, no shell exec — nothing that bypasses `dpdisp submit`. Local backends use `batch_type: Shell`, which still runs through DPDispatcher. There are zero exceptions to this rule, regardless of how simple, local, or fast the job appears.
 
 **REQUIRED CONTEXT:** The orchestrator includes the backend profile in the subagent prompt under "Backend". Read it before using this skill.
 
@@ -82,15 +82,16 @@ Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no
   },
   "task_list": [
     {
-      "command": "lmp -in in.minimize",
+      "command": "<command from stage parameters>",
       "task_work_path": "stage-1",
-      "forward_files": ["in.minimize", "data.polymer"],
-      "backward_files": ["log.lammps", "data.minimized", "log", "err"]
+      "forward_files": ["<input files for this stage>"],
+      "backward_files": ["<expected output files>", "log", "err"]
     }
   ]
 }
 ```
 
+- `task_list` field names above are descriptive placeholders, not literal filenames. Replace with actual files from the stage spec. `log` and `err` are DPDispatcher standard outputs — always include them. Add software-specific log files to `backward_files`.
 - `local_root` and `remote_root`: REQUIRED even for LocalContext (without them, `dpdisp submit` crashes with `KeyError: 'remote_root'`). Both are the workflow root absolute path. Resolve via `$(pwd)`.
 - `resources`: Start from the profile's `resource_defaults`. If none provided, use the values above as defaults. Apply any stage-level `resource_overrides` on top.
 
@@ -115,10 +116,10 @@ Write to `{workflow_root}/stage-{id}/submission.json`. The JSON is flat — **no
   },
   "task_list": [
     {
-      "command": "lmp -in in.production",
+      "command": "<command from stage parameters>",
       "task_work_path": "stage-3",
-      "forward_files": ["in.production", "restart.equil", "validate_env.sh"],
-      "backward_files": ["log.lammps", "dump.production", "restart.final", "log", "err"]
+      "forward_files": ["<input files>", "<dependency outputs>", "validate_env.sh"],
+      "backward_files": ["<expected output files>", "<restart/checkpoint files>", "log", "err"]
     }
   ]
 }
@@ -184,10 +185,16 @@ For remote backend stages, generate a stage-specific validation script based on 
 #!/bin/bash
 # validate_env.sh — uploaded as forward_file, executed via prepend_script
 # Checks generated from stage parameters — adapt per software
-command -v lmp >/dev/null 2>&1 || { echo "FAIL: lmp not found in PATH"; exit 1; }
-lmp -h 2>&1 | grep -q "Installed packages:" || { echo "FAIL: cannot query lmp packages"; exit 1; }
-# If command uses -sf gpu, check for GPU package:
-lmp -h 2>&1 | grep -q "GPU" || { echo "FAIL: GPU package not found — remove -sf gpu"; exit 1; }
+
+# Check binary exists (required for every stage)
+command -v <binary> >/dev/null 2>&1 || { echo "FAIL: <binary> not found in PATH"; exit 1; }
+
+# Check software-specific requirements (examples — adapt per tool):
+#   lmp -h 2>&1 | grep -q "GPU"                                    # LAMMPS GPU package
+#   python -c "import torch; assert torch.cuda.is_available()"      # PyTorch GPU
+#   simpleFoam -help 2>&1 | head -1                                 # OpenFOAM binary
+#   gmx --version 2>&1 | grep -q "GROMACS"                          # GROMACS availability
+
 echo "ENV_VALIDATION_PASSED"
 ```
 
@@ -197,8 +204,8 @@ echo "ENV_VALIDATION_PASSED"
 **Why `prepend_script` and not `source_list`:** DPDispatcher renders `source_list` entries as bare `source {file}` lines with no error checking. A failing `source` does not abort execution. `prepend_script` lines run as shell commands with explicit `|| exit 1`, which aborts the job immediately on failure.
 
 **When to generate:** For every remote backend stage. The validation checks are derived from:
-- `parameters.software` → check binary exists
-- Command flags (e.g., `-sf gpu`) → check required packages
+- `parameters.software` → check binary exists in PATH
+- Command flags that depend on optional features → check those features are available
 - `[UNVERIFIED]` annotations in the experiment design → mandatory validation
 
 **When to skip:** Local backend stages (`batch_type: Shell`) do not need pre-flight validation — `init.sh` already validates the local environment.
@@ -258,12 +265,12 @@ Use these EXACT names — the orchestrator's poll protocol depends on them:
 All paths in `forward_files` and `backward_files` are **relative to `task_work_path`** (i.e., relative to `stage-{id}/`).
 
 **forward_files** — everything the job reads:
-- Scripts/configs prepared for this stage (e.g., `in.minimize`, `data.polymer`)
+- Scripts/configs prepared for this stage (e.g., input scripts, data files)
 - Dependency outputs from prior stages — **copy into `stage-{id}/` first**, then list the copied filename:
   ```bash
-  cp ../stage-2/equilibrated.data stage-{id}/equilibrated.data
+  cp ../stage-2/output.data stage-{id}/input.data
   ```
-- Auxiliary files referenced in scripts (force fields, potential tables)
+- Auxiliary files referenced in scripts (parameter files, configuration files, data tables)
 
 **backward_files** — everything that needs to come back:
 - All expected output files from the stage spec's `outputs`
@@ -313,7 +320,7 @@ When `retry_count > 0`, the orchestrator prompt specifies one of two modes:
 3. Submit the new `submission.json`.
 
 The orchestrator chooses the mode based on the nature of the fix:
-- Input script fix (e.g., remove `-sf gpu` from LAMMPS command) → **reuse**
+- Input script fix (e.g., corrected a flag in the computation command) → **reuse**
 - Submission parameter fix (e.g., change `gpu_per_node`, add `custom_flags`) → **regenerate**
 
 ## Security Guardrails
@@ -337,7 +344,7 @@ The orchestrator chooses the mode based on the nature of the fix:
 | "I'll write my own wrapper script" | Use the EXACT template. The orchestrator depends on `dpdisp-run.sh`, `DPDISP_DONE`, `DPDISP_EXIT_CODE`, and `dpdisp_stage-{id}` naming. |
 | "The key is `task` not `task_list`" | It is `task_list` (array). |
 | "I'll wrap it in `{submission: {...}}`" | No wrapper. Flat JSON. `dargs check` rejects a `submission` key. |
-| "It's just a local job, I'll run `lmp < in.minimize` directly" | **NEVER.** Local backends use `batch_type: Shell` — still submitted via `dpdisp submit`. |
+| "It's just a local job, I'll run the command directly" | **NEVER.** Local backends use `batch_type: Shell` — still submitted via `dpdisp submit`. |
 | "DPDispatcher is slow/complex for this simple script" | Complexity is irrelevant. Every job goes through `dpdisp submit`. No exceptions. |
 | "I'll run it directly first to test, then use DPDispatcher for real" | **NEVER run directly.** Validate with `dargs check` and `--dry-run`. That is sufficient. |
 | "I'll just `bash` the run script I wrote" | Only valid script to run is `dpdisp-run.sh` inside tmux. Never bash the simulation script directly. |

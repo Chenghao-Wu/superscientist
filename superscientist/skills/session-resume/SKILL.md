@@ -64,12 +64,16 @@ Find the next actionable item:
 
 ### Step 7: Log and Resume
 
-Append session start entry to `progress.log`:
-```
-[TIMESTAMP] Session N started. Reading workflow-state.json... [summary of state]
+1. Read `session_count` from `session_config` in `workflow-state.json`. Increment by 1. Write back to `workflow-state.json`.
+2. Append session start entry to `progress.log` using the incremented `session_count` as N:
+
+```bash
+echo "[$(date -Iseconds)] Session ${N} started. Reading workflow-state.json... [summary of state]" >> progress.log
 ```
 
-Resume work via `superscientist:executing-workflows`.
+N comes from `session_count` — not from counting log entries or inference.
+
+3. Resume work via `superscientist:executing-workflows`.
 
 **If a `running` stage was identified in Step 5 with tmux still alive**, re-establish background monitoring before dispatching any new stages:
 
@@ -85,8 +89,8 @@ The orchestrator will be auto-notified when the job completes, then resume via `
 Read `session_config` from `workflow-state.json`.
 
 1. If `exit_reason` from the previous session is not null, log it:
-   ```
-   [TIMESTAMP] Previous session ended: exit_reason=budget_exhausted, cost=5.5/6
+   ```bash
+   echo "[$(date -Iseconds)] Previous session ended: exit_reason=budget_exhausted, cost=5.5/6" >> progress.log
    ```
    (Use actual values from `session_config.session_cost` and `session_config.session_budget`.)
 2. Set `session_id` to current ISO timestamp.

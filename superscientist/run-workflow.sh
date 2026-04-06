@@ -15,6 +15,18 @@ RAPID_FAILURE_COUNT=0
 
 log() { echo "[$(date -Iseconds)] $1" | tee -a "$LOG_FILE"; }
 
+# -- macOS-compatible timeout ---------------------------------------------
+if command -v timeout >/dev/null 2>&1; then
+    TIMEOUT_CMD="timeout"
+else
+    # Fallback: use perl alarm signal (available on all macOS)
+    TIMEOUT_CMD="_perl_timeout"
+    _perl_timeout() {
+        local secs="$1"; shift
+        perl -e 'alarm shift @ARGV; exec @ARGV' "$secs" "$@"
+    }
+fi
+
 # -- Pre-flight ----------------------------------------------------------
 preflight() {
     command -v claude >/dev/null 2>&1 || { log "ERROR: claude CLI not found in PATH"; exit 1; }
@@ -92,8 +104,9 @@ while true; do
     log "Session $SESSION_COUNT starting (completed stages: $STAGES_BEFORE)"
 
     # Run Claude with session timeout
-    ( cd "$WORKFLOW_DIR" && timeout "$SESSION_TIMEOUT" \
-        claude -p "Invoke the superscientist:session-resume skill for the workflow in this directory." ) || true
+    ( cd "$WORKFLOW_DIR" && $TIMEOUT_CMD "$SESSION_TIMEOUT" \
+        claude -p "Invoke the session-resume skill for the workflow in this directory. The workflow-state.json and progress.log are in the current directory." \
+        --allowedTools "Bash(*) Read Write Edit Glob Grep Agent Skill" ) || true
 
     SESSION_END=$(date +%s)
     DURATION=$(( SESSION_END - SESSION_START ))

@@ -176,10 +176,10 @@ Most computational workflows follow: Prepare → Validate → Compute → Analyz
 
 For every remote-backend binary path, package requirement, or software flag specified in the design:
 - Ask: "Has this been tested on the target cluster?"
-- If verified: note the verification in the design doc (e.g., "Confirmed via `lmp -h` on 2026-04-06")
+- If verified: note the verification in the design doc (e.g., "Confirmed via `<binary> --help` on 2026-04-06")
 - If not verified: annotate with `[UNVERIFIED]` in the design doc:
   ```
-  **Software command:** `/gpfs/home/user/bin/lmp -sf gpu` [UNVERIFIED]
+  **Software command:** `/path/to/binary [--flags]` [UNVERIFIED]
   ```
 
 `[UNVERIFIED]` signals to `workflow-planning` and `compute-backend` that a `prepend_script` validation is mandatory for stages using this command.

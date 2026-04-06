@@ -31,13 +31,13 @@ NO FIXES WITHOUT ROOT CAUSE INVESTIGATION FIRST
 | Category | Symptoms | Common Causes |
 |---|---|---|
 | **Input error** | Missing files, wrong format, bad parameters | Typo in paths, wrong output from prior stage |
-| **Convergence failure** | SCF not converging, geometry stuck | Bad initial guess, too tight criteria, wrong method |
-| **Numerical instability** | NaN energies, exploding forces, negative T | Too-large timestep, overlapping atoms, bad geometry |
+| **Convergence failure** | Iterative solver not converging, optimization stalled | Bad initial conditions, too tight criteria, wrong method |
+| **Numerical instability** | NaN values, diverging quantities, unphysical outputs | Step size too large, ill-conditioned inputs, problematic initial state |
 | **Resource limit** | OOM, timeout, disk full | System too large, too many k-points, long trajectory |
-| **Wrong results** | Converged but physically wrong answer | Wrong functional, missing dispersion, bad pseudopotential |
+| **Wrong results** | Converged but incorrect answer | Wrong method/model, missing correction, inappropriate approximation |
 | **Analysis/plotting error** | Missing data, wrong column, library issue | Wrong file format, missing dependency, encoding |
 | **Environment issue** | Missing binary, wrong version, import error | Wrong conda env, missing package, version mismatch |
-| **Dependency conflict** | Software missing feature, incompatible libs | LAMMPS missing package, VASP without SOC, wrong MPI |
+| **Dependency conflict** | Software missing feature, incompatible libs | Software missing required module, incompatible library versions |
 
 ## Phase 3: Hypothesis and Test
 
@@ -88,10 +88,10 @@ If the job was `terminated` by the scheduler, check `dpdispatcher.log` or the or
 
 When the calculation converges and files look correct, but the answer is physically wrong:
 
-1. Check against known reference values (published data, databases)
-2. Check physical bounds (positive bulk modulus, band gap in expected range)
-3. Check internal consistency (forces match energy surface, equation of state makes sense)
-4. If no reference exists — propose a validation calculation against a well-known system as a new stage (via amendment protocol)
+1. Check against known reference values (published data, databases, analytical solutions)
+2. Check domain-appropriate bounds (values within physically/mathematically meaningful ranges)
+3. Check internal consistency (outputs internally consistent — quantities derived from the same source agree)
+4. If no reference exists — propose a validation calculation against a well-known test case as a new stage (via amendment protocol)
 
 ## Red Flags
 

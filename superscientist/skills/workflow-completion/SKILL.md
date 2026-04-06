@@ -52,9 +52,9 @@ Add top-level field: `"workflow_status": "completed"` and update `"updated"` tim
 
 ### Step 4: Final Log Entry
 
-Append to `progress.log`:
-```
-[TIMESTAMP] Workflow completed. All N stages verified. Report: docs/superscientist/reports/...
+Append to `progress.log` via Bash tool:
+```bash
+echo "[$(date -Iseconds)] Workflow completed. All N stages verified. Report: docs/superscientist/reports/..." >> progress.log
 ```
 
 ### Step 5: Commit

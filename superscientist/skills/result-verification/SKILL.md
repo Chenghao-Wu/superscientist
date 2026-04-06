@@ -44,21 +44,18 @@ Read the `success_criteria` from `workflow-state.json` for this stage. Check eac
 
 | Criterion type | How to verify |
 |---|---|
-| Energy convergence | Parse final energies, check change < threshold |
-| Force convergence | Parse final forces, check max force < threshold |
-| SCF convergence | Check that SCF loop completed normally |
-| Geometry converged | Check ionic loop completed with required accuracy |
-| File produced | Check file exists and has expected format |
-| Plot renders | Check image file is valid and non-zero size |
-| Script completed | Check exit code is 0 |
+| Convergence metric | Parse output, check final value meets threshold from success_criteria |
+| Numerical result | Extract value, compare against target or reference |
+| Output file produced | Check file exists, non-empty, and in expected format |
+| Visualization | Check image file valid, non-zero size, expected content present |
+| Script/process completion | Check exit code is 0 and no fatal errors in logs |
 
 ### 4. Sanity Checks
 
-Domain-specific reasonableness checks:
-- Energies in physically reasonable range?
-- Lattice parameters reasonable for this material?
-- No unphysical values (negative temperatures, imaginary frequencies where unexpected)?
-- Bond lengths/angles within expected ranges?
+Domain-specific reasonableness checks (derive from experiment design):
+- Output values within physically/mathematically reasonable ranges?
+- No obviously unphysical values (NaN, infinite, negative where impossible)?
+- Results consistent with prior stages or known references?
 - For plots: axes labeled, data present, no obvious artifacts?
 
 ### 5. No Silent Failures

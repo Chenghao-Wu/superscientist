@@ -13,7 +13,7 @@ Execute workflow stages sequentially, one subagent per stage. The orchestrator (
 
 **REQUIRED BACKGROUND:** `superscientist:checkpoint-management` defines the state model (9 statuses, valid transitions), progress.log format, `running_process` schema, and poll protocol. This skill defines the orchestrator's execution loop.
 
-**Persistence rule:** Every status transition must be written to `workflow-state.json` AND appended to `progress.log` *before* the next action.
+**Persistence rule:** Every status transition must be written to `workflow-state.json` AND appended to `progress.log` *before* the next action. All progress.log entries MUST be appended via Bash tool using `echo "[$(date -Iseconds)] message" >> progress.log` — never generate timestamps as text.
 
 ## The Autonomous Execution Law
 
@@ -136,8 +136,8 @@ This step is a gate, not part of the execution loop. It runs once before Pre-Fli
    - Args: current working directory, max 20 sessions (default).
 
    **e. Log to `progress.log`:**
-   ```
-   [TIMESTAMP] Autonomous mode activated. tmux session: workflow-runner-{workflow_id}
+   ```bash
+   echo "[$(date -Iseconds)] Autonomous mode activated. tmux session: workflow-runner-{workflow_id}" >> progress.log
    ```
 
    **f. Inform user:**
@@ -172,9 +172,9 @@ for each stage with status "pending":
         set status -> "ready" (no dependencies = immediately ready)
     else if ALL stages in depends_on have status "completed":
         set status -> "ready"
-        log: "[timestamp] stage-N (Name): status -> ready (dependencies met)"
+        echo "[$(date -Iseconds)] stage-N (Name): status -> ready (dependencies met)" >> progress.log
     else if ANY stage in depends_on has status "failed" or "skipped":
-        log warning: "[timestamp] stage-N blocked: dependency stage-M is failed/skipped"
+        echo "[$(date -Iseconds)] WARNING: stage-N blocked: dependency stage-M is failed/skipped" >> progress.log
 ```
 
 Note: `skipped` is set only via user decision through the amendment protocol in `checkpoint-management`.
@@ -227,7 +227,7 @@ Type: {local | remote}
 1. Verify ALL input files exist and are non-empty.
 2. Prepare the computation script using stage parameters and domain skills.
 3. **YOU MUST invoke `superscientist:compute-backend` to submit this job.**
-   **NEVER run the computation command directly** (no `lmp < script`, no `bash script`, no `python script.py`, no subprocess). DPDispatcher is the ONLY allowed execution path — even for local backends, even for "simple" one-liners, even when it feels like overkill.
+   **NEVER run the computation command directly** (no `bash script`, no `python script.py`, no subprocess). DPDispatcher is the ONLY allowed execution path — even for local backends, even for "simple" one-liners, even when it feels like overkill.
    - Provide it: the stage directory, the command, forward/backward files.
 4. Report back: submission status, submission.json path, and either
    inline results (sync) or tmux session name (async).
@@ -247,7 +247,10 @@ The compute-backend skill determines sync vs. async based on the backend type an
 
 **Sync** (local, < 2 min): Subagent returns inline results. Status stays `preparing` — skip `running`. Proceed directly to step 5.
 
-**Async** (remote, or local > 2 min): Subagent reports tmux session name and submission.json path. Update status: `preparing` -> `running`. Record `running_process` in `workflow-state.json` per the schema in `checkpoint-management`. Log: `[timestamp] stage-N: status -> running (tmux: dpdisp_stage-N)`.
+**Async** (remote, or local > 2 min): Subagent reports tmux session name and submission.json path. Update status: `preparing` -> `running`. Record `running_process` in `workflow-state.json` per the schema in `checkpoint-management`. Log:
+```bash
+echo "[$(date -Iseconds)] stage-N: status -> running (tmux: dpdisp_stage-N)" >> progress.log
+```
 
 **→ Continue to Step 4 (async) or Step 5 (sync). Do not report to the user.**
 
@@ -273,7 +276,10 @@ You will be auto-notified when the file appears. Do NOT sleep-and-check manually
 
 1. Run a single check: `test -f stage-N/DPDISP_DONE && cat stage-N/DPDISP_EXIT_CODE || echo "NOT_DONE"`
 2. If done → process the result (same as notification path above).
-3. If not done → the job is long-running. Log: `[timestamp] stage-N: async job still running. Ending session for session-resume.` End session cleanly.
+3. If not done → the job is long-running. Log and end session cleanly:
+   ```bash
+   echo "[$(date -Iseconds)] stage-N: async job still running. Ending session for session-resume." >> progress.log
+   ```
 4. `session-resume` will pick up on next session start, check tmux state, and re-establish monitoring.
 
 **Do NOT dispatch other stages while waiting.** Execution is sequential.
@@ -297,7 +303,10 @@ After marking `completed`:
    - Read `session_config` from `workflow-state.json`.
    - Increment `session_cost` by the stage's weight from `stage_weights`.
    - Write updated `session_cost` to `workflow-state.json`.
-   - Log: `[timestamp] stage-N: session_cost += {weight} ({classification}), total={session_cost}/{session_budget}`
+   - Log:
+     ```bash
+     echo "[$(date -Iseconds)] stage-N: session_cost += {weight} ({classification}), total={session_cost}/{session_budget}" >> progress.log
+     ```
 
 2. **Dependency resolution:** Advance `pending` → `ready` for stages whose dependencies are now met.
 
@@ -306,7 +315,10 @@ After marking `completed`:
    - No `ready`/`running` but uncompleted stages remain? → Workflow is blocked. Log and inform user.
    - Any `ready` stages? → Estimate the next stage's weight (`sync` if local backend, `async` if remote). If `session_cost + estimated_next_weight > session_budget`:
      - Set `exit_reason` to `"budget_exhausted"` in `workflow-state.json`.
-     - Log: `[timestamp] Session ending: budget exhausted (cost={session_cost}, budget={session_budget})`.
+     - Log:
+       ```bash
+       echo "[$(date -Iseconds)] Session ending: budget exhausted (cost={session_cost}, budget={session_budget})" >> progress.log
+       ```
      - **Stop execution.** Do not dispatch the next stage.
    - Otherwise → Return to Step 1 (Select Stage). Dispatch immediately.
 
@@ -341,17 +353,20 @@ When a remote backend stage fails, apply the two-level diagnostic model before r
 
 After `systematic-debugging` identifies and applies a fix:
 
-1. **Transition:** `failed` -> `ready`. Increment `retry_count`. Log: `[timestamp] stage-N: retry #{count} after fix: {description}`.
+1. **Transition:** `failed` -> `ready`. Increment `retry_count`. Log:
+   ```bash
+   echo "[$(date -Iseconds)] stage-N: retry #{count} after fix: {description}" >> progress.log
+   ```
 2. **Max retries:** Determine the retry limit from the backend:
    - Look up the stage's backend profile: `backend_profiles[stage.backend or default_backend]`
    - If `profile.type == "remote"`: max retries = **5**
    - If `profile.type == "local"`: max retries = **3**
    - If `retry_count` reaches the limit, **STOP**. Inform user: "stage-N has failed {limit} times. Manual intervention required."
 3. **Old outputs:** Leave in place — the new run overwrites them.
-4. **Parameter changes:** If the fix modifies `parameters` or `success_criteria` in `workflow-state.json`, use the amendment protocol from `checkpoint-management` first. Changes only to input script content (e.g., fixing a LAMMPS command) do NOT require an amendment.
+4. **Parameter changes:** If the fix modifies `parameters` or `success_criteria` in `workflow-state.json`, use the amendment protocol from `checkpoint-management` first. Changes only to input script content (e.g., fixing a syntax error) do NOT require an amendment.
 5. **Subagent context:** Include retry info in the prompt (see template). Prevents subagent from regenerating scripts and reverting the fix.
 6. **Reuse vs regenerate:** Include the retry mode in the subagent prompt:
-   - Script-level fix (e.g., removed `-sf gpu` from LAMMPS command) → add: "Reuse existing `submission.json`."
+   - Script-level fix (e.g., corrected a flag in the input script) → add: "Reuse existing `submission.json`."
    - Submission-level fix (e.g., changed `gpu_per_node`, fixed `custom_flags`) → add: "Regenerate `submission.json` from updated parameters."
 
 ## Red Flags
@@ -367,7 +382,7 @@ After `systematic-debugging` identifies and applies a fix:
 | "Dependencies are obvious, skip the check" | Run dependency resolution algorithmically. Never assume. |
 | "init.sh passed last time, skip it" | Environment changes between sessions. Always run pre-flight. |
 | "Let me try one more fix" (retry_count >= limit) | Stop. Repeated failures mean the approach may be wrong. Ask the user. Limit is 3 (local) or 5 (remote). |
-| "It's local and fast, I'll just run `lmp < ...` directly" | **NEVER.** All jobs go through compute-backend → DPDispatcher. No exceptions. |
+| "It's local and fast, I'll just run the command directly" | **NEVER.** All jobs go through compute-backend → DPDispatcher. No exceptions. |
 | "compute-backend is overkill for this simple script" | compute-backend is mandatory for every stage, regardless of complexity. |
 | "I'll test the script first by running it directly, then use DPDispatcher" | **Never run the command directly.** Use `dargs check` and `--dry-run` to validate. |
 | "The subagent already ran the job, I just need to check outputs" | If compute-backend was not invoked, the stage is not complete. The job must be re-run through DPDispatcher. |
