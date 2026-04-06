@@ -68,6 +68,7 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
   "session_config": {
     "autonomous": false,
     "session_budget": 6,
+    "session_count": 0,
     "session_id": null,
     "session_cost": 0,
     "exit_reason": null,
@@ -134,17 +135,19 @@ Create with all stages in `pending` status. Every stage MUST have all fields sho
 - Top-level MUST include `default_backend` and `backend_profiles` (at minimum a `"local"` profile)
 - Stage `backend` field is optional — `null` means use `default_backend`
 - `backend_profiles` with `type: "remote"` must include `batch_type` (the scheduler type from the machine config, e.g., `"Slurm"`, `"PBS"`, `"LSF"`, `"SGE"`), `config_path` (path to external machine config — validated for existence, never read), and `resource_defaults`
-- Top-level MUST include `session_config` with `session_budget` (default 6), `session_id` (null), `session_cost` (0), `exit_reason` (null), and `stage_weights` (sync: 1, async: 1.5, error_cycle: 2, diagnostic: 2). User may adjust `session_budget` and `stage_weights` after planning.
+- Top-level MUST include `session_config` with `session_budget` (default 6), `session_count` (0), `session_id` (null), `session_cost` (0), `exit_reason` (null), and `stage_weights` (sync: 1, async: 1.5, error_cycle: 2, diagnostic: 2). `session_count` is incremented by session-resume at each session start — single source of truth for session numbering. User may adjust `session_budget` and `stage_weights` after planning.
 - `session_config.autonomous` is a boolean (default `false`). Set to `true` during planning when the user opts in to autonomous session chaining.
 - Do NOT add extra fields (`description`, `known_pitfalls`, `safeguards`, `expected_walltime`, `execution_order`) — those belong in the design doc or plan doc, not the state file
 
 ### Step 4: Create `progress.log`
 
-Single line. No more.
+Single line via Bash tool. No more.
 
+```bash
+echo "[$(date -Iseconds)] Workflow created: <workflow_id>. N stages. Purpose: <purpose>." > progress.log
 ```
-[YYYY-MM-DD HH:MM] Workflow created: <workflow_id>. Stages: N total, all pending.
-```
+
+Note: `>` (create) not `>>` (append) — this is the initial creation.
 
 ### Step 5: Create `init.sh`
 
@@ -162,33 +165,30 @@ Build environment checks for **every** software tool in the workflow. This scrip
 #!/bin/bash
 set -e
 
-# Direct conda env paths (conda activate unreliable in non-interactive shells)
-CONDA_ENV="/Users/zhenghaowu/miniconda3/envs/omnischolar"
-PYTHON="$CONDA_ENV/bin/python3"
-
-# Check Python
-$PYTHON --version || { echo "FAIL: python3 not found at $PYTHON"; exit 1; }
-
-# Check software-specific tools (ADD ALL from design doc)
-# Example for LAMMPS:
-# LMP="$CONDA_ENV/bin/lmp"
-# $LMP -h > /dev/null 2>&1 || { echo "FAIL: LAMMPS not found at $LMP"; exit 1; }
-
-# Check Python libraries used in analysis stages
-$PYTHON -c "import numpy; import matplotlib" || { echo "FAIL: required Python libraries not available"; exit 1; }
-
-# Compute backend prerequisites
+# ── Infrastructure (always required) ──
 command -v uvx >/dev/null 2>&1 || { echo "FAIL: uvx not found"; exit 1; }
 command -v tmux >/dev/null 2>&1 || { echo "FAIL: tmux not found"; exit 1; }
 uvx --from dpdispatcher dpdisp --help > /dev/null 2>&1 || { echo "FAIL: dpdispatcher not accessible via uvx"; exit 1; }
+
+# ── Project-specific (derive ALL from design doc) ──
+# Use direct conda/venv paths — `conda activate` is unreliable in non-interactive shells.
+# Every check MUST `exit 1` on failure — never WARNING for required software.
+#
+# Examples (adapt to your software stack):
+# CONDA_ENV="/path/to/conda/env"
+# PYTHON="$CONDA_ENV/bin/python3"
+# $PYTHON --version || { echo "FAIL: python3 not found at $PYTHON"; exit 1; }
+# $PYTHON -c "import numpy; import torch" || { echo "FAIL: required Python libraries not available"; exit 1; }
+# command -v lmp >/dev/null 2>&1 || { echo "FAIL: LAMMPS not found"; exit 1; }
+# command -v simpleFoam >/dev/null 2>&1 || { echo "FAIL: OpenFOAM not found"; exit 1; }
 
 echo "Environment ready."
 ```
 
 **For each software in the design doc, add a check:**
-- Simulation software (LAMMPS, VASP, RASPA2, GROMACS): check binary path
-- Python libraries (AutoPoly, numpy, matplotlib, MDAnalysis): check import
-- External tools (VESTA, Avogadro): check binary if used in scripts
+- Computation binaries (e.g., LAMMPS, OpenFOAM, VASP, GROMACS, custom solvers): check binary path
+- Python/R libraries (e.g., numpy, torch, MDAnalysis, pandas, scikit-learn): check import
+- External tools (e.g., AutoPoly, samtools, PLUMED, ffmpeg): check binary if used in scripts
 
 ### Step 6: Write Plan Doc
 
@@ -220,7 +220,7 @@ Save to `docs/superscientist/plans/YYYY-MM-DD-<topic>.md`:
 - **Dispatch mode:** [sync (local < 2 min) or async (tmux)]
 ```
 
-**Commands must be exact.** Not "Run RASPA2 GCMC at 298K" but the actual command: `simulate -i simulation.input` or `lmp -in input.lammps`. If the exact command depends on stage preparation, describe the command template and what the subagent fills in.
+**Commands must be exact.** Not "Run the simulation at 298K" but the actual command: `lmp -in input.lammps` or `python train.py --config config.yaml`. If the exact command depends on stage preparation, describe the command template and what the subagent fills in.
 
 **Backend and dispatch:** Each stage specifies which backend profile to use. The `superscientist:compute-backend` skill handles dispatch — sync for local short jobs (< 2 min), async via tmux for everything else (remote backends always, local long jobs).
 
