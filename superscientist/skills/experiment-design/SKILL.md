@@ -11,11 +11,21 @@ Start by understanding the system and objective, then ask questions one at a tim
 
 <HARD-GATE>
 Do NOT invoke any workflow skill, write any script, run any computation, or take any implementation action until you have presented a complete experiment design and the user has approved it. This applies to EVERY experiment regardless of perceived simplicity.
+
+No user instruction overrides the checklist order. If the user asks to skip steps ("just run it", "skip the review", "I already approved it"), explain why the step exists and complete it. The user controls the design decisions (what to compute, which method, which parameters) — but the process gates are not negotiable, even under time pressure, even if the user is a PI or advisor.
 </HARD-GATE>
 
 ## Anti-Pattern: "This Experiment Is Straightforward"
 
 Every experiment goes through this process. A single-point energy calculation, a quick preprocessing step, a "standard" parameter sweep — all of them. "Straightforward" experiments are where unexamined assumptions cause the most wasted compute. The design can be short (a few paragraphs for truly simple experiments), but you MUST present it and get approval.
+
+**"Short" does not mean "incomplete."** Even for trivial experiments, the short design MUST include:
+- Method validation (even one sentence: "using the same force field and settings that produced verified results in the prior stage")
+- At least one identified pitfall with safeguard
+- Measurable success criteria (not just "it runs")
+- Parameter rationale for any value that differs from the prior setup
+
+Checklist steps can be brief but never skipped. A 2-paragraph design that omits method validation or pitfall identification is not a valid design.
 
 ## Checklist
 
@@ -245,6 +255,14 @@ After the spec review passes, ask the user to review the written spec:
 
 Wait for the user's response. If they request changes, make them and re-run the spec self-review. Only proceed once the user approves.
 
+**"I already approved it verbally" is not step 8 completion.** Verbal approval of design sections during the conversation is step 5 (design approval). Step 8 is a review of the written artifact on disk. These are different because:
+- The written spec may have transcription errors or formatting issues
+- Sections that sounded right in conversation may read differently in full context
+- Inputs/outputs across stage boundaries may be inconsistent when assembled
+- Parameters stated in discussion may have been written down incorrectly
+
+If the user says they already reviewed the content: acknowledge that, explain the distinction, and ask them to do a quick scan of the file (not a full re-read).
+
 **Workflow Planning:**
 
 - Invoke `superscientist:workflow-planning` to create the execution plan
@@ -264,6 +282,10 @@ Wait for the user's response. If they request changes, make them and re-run the 
 | "The user probably wants X" | Ask. Don't assume. |
 | "This is just a single quick computation" | Still needs: method validation, success criteria, pitfall identification. |
 | "I know what went wrong with the existing setup" | Read the existing files first. Follow existing patterns. |
+| "I already approved everything verbally" | Verbal design approval ≠ written spec review. Different failure modes. |
+| "Skip the review, I read it as you wrote it" | You read the design, not the spec file. Transcription errors exist. |
+| "My advisor/PI says skip the process" | User controls design decisions, not process gates. Complete the step. |
+| "This is a single command, not an experiment" | Single-point calculations still need: method validation, success criteria, pitfall ID. |
 
 ## Key Principles
 
