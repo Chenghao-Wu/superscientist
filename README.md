@@ -94,20 +94,24 @@ Install whichever you need; superscientist remains software-agnostic by design.
 
 ## Reproducible LAMMPS environment
 
-A companion repo — **[Chenghao-Wu/examples-superscientist](https://github.com/Chenghao-Wu/examples-superscientist)** — ships a pinned LAMMPS Docker image (`ghcr.io/Chenghao-Wu/examples-superscientist`) and three host wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`) that let `compute-backend` invoke LAMMPS transparently via Docker. Add `bin/` to your `PATH` and the harness treats `lmp` like any host binary:
+A companion repo — **[Chenghao-Wu/examples-superscientist](https://github.com/Chenghao-Wu/examples-superscientist)** — provides a pinned LAMMPS conda environment. Clone and run the bootstrap script once:
 
 ```bash
-export PATH="/path/to/superscientist/bin:$PATH"
-docker pull ghcr.io/Chenghao-Wu/examples-superscientist:latest   # first time only
+git clone https://github.com/Chenghao-Wu/examples-superscientist
+cd examples-superscientist
+bash bootstrap.sh
 ```
 
-Pin a versioned image for shared demos:
+The bootstrap script downloads `micromamba` (if needed) and creates a `superscientist` conda environment from platform-specific lockfiles. All LAMMPS and Python commands go through `micromamba run`:
 
 ```bash
-export EXAMPLES_SUPERSCIENTIST_IMAGE="ghcr.io/Chenghao-Wu/examples-superscientist:v0.1.0"
+micromamba run -n superscientist lmp -in input.lmp
+micromamba run -n superscientist python analysis.py
 ```
 
-Image is `linux/amd64` (Apple Silicon Macs use Docker Desktop's Rosetta 2 emulation). See the companion repo for build details and reproducibility guarantees.
+The repo includes `superscientist.json` (machine-readable command argv arrays) and `AGENTS.md` (human/AI-readable setup guide). The `compute-backend` skill reads `superscientist.json` to discover how to invoke LAMMPS — no hardcoded wrappers needed.
+
+Supports linux-64, osx-arm64, and osx-64. Windows users should use WSL or the native LAMMPS installer. See the companion repo for platform details and lockfile reproducibility guarantees.
 
 ## Quick install
 
