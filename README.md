@@ -92,7 +92,23 @@ Superscientist is the orchestration harness. The simulation packages it drives �
 
 Install whichever you need; superscientist remains software-agnostic by design.
 
-## Installation
+## Quick install
+
+Paste either prompt into Claude Code — it will add the marketplace(s) and install everything for you.
+
+**Just the harness:**
+
+> Install the Superscientist plugin from https://github.com/Chenghao-Wu/superscientist —
+> add it as a Claude Code plugin marketplace and install the `superscientist` plugin.
+
+**Harness + companion physics skills (LAMMPS, GROMACS, CP2K, MACE, …):**
+
+> Install Superscientist from https://github.com/Chenghao-Wu/superscientist and the
+> companion skills from https://github.com/WuGroup-XJTLU/cc-skills-ZhenghaoWu-Group.
+> Add both as Claude Code plugin marketplaces, install the `superscientist` plugin,
+> and install all the physics skills from cc-skills-ZhenghaoWu-Group.
+
+## Manual install
 
 ```bash
 git clone <repo-url>
