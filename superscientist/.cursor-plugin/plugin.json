@@ -1,8 +1,0 @@
-{
-  "name": "superscientist",
-  "displayName": "Superscientist",
-  "version": "0.1.0",
-  "description": "File-centric, resumable harness for computational science workflows",
-  "skills": "./skills/",
-  "agents": "./agents/"
-}
