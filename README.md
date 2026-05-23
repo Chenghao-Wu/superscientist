@@ -92,6 +92,23 @@ Superscientist is the orchestration harness. The simulation packages it drives �
 
 Install whichever you need; superscientist remains software-agnostic by design.
 
+## Reproducible LAMMPS environment
+
+A companion repo — **[Chenghao-Wu/examples-superscientist](https://github.com/Chenghao-Wu/examples-superscientist)** — ships a pinned LAMMPS Docker image (`ghcr.io/Chenghao-Wu/examples-superscientist`) and three host wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`) that let `compute-backend` invoke LAMMPS transparently via Docker. Add `bin/` to your `PATH` and the harness treats `lmp` like any host binary:
+
+```bash
+export PATH="/path/to/superscientist/bin:$PATH"
+docker pull ghcr.io/Chenghao-Wu/examples-superscientist:latest   # first time only
+```
+
+Pin a versioned image for shared demos:
+
+```bash
+export EXAMPLES_SUPERSCIENTIST_IMAGE="ghcr.io/Chenghao-Wu/examples-superscientist:v0.1.0"
+```
+
+Image is `linux/amd64` (Apple Silicon Macs use Docker Desktop's Rosetta 2 emulation). See the companion repo for build details and reproducibility guarantees.
+
 ## Quick install
 
 Paste either prompt into Claude Code — it will add the marketplace(s) and install everything for you.
