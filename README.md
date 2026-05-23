@@ -1,117 +1,118 @@
 # Superscientist
 
-A Claude Code plugin providing a file-centric, resumable, cross-session harness for computational science workflows. Workflows survive session boundaries via three checkpoint files — `workflow-state.json`, `progress.log`, and `init.sh` — so any new session can recover full context and continue where the last one left off.
+> *Autonomous physics-based computational science — the AI scientist that runs the simulations, not just the literature.*
 
-## Features
+Most agentic research tools stop at reading papers or tuning neural networks. Superscientist closes the loop on physics-based modeling: a Claude Code harness that designs experiments with you, submits jobs to local or HPC backends, polls them across sessions, verifies the outputs, and resumes after crashes — autonomously, until the workflow completes.
 
-- **File-centric** — structured checkpoint files (JSON state, progress log, init script) you can monitor at any time
-- **Resumable** — new sessions recover full context from checkpoint files
-- **Cross-session** — workflows survive session boundaries
-- **Subagent-driven** — all work dispatched to subagents, executed sequentially
-- **Software-agnostic** — harness pattern works for any computational software
-- **Compute backend agnostic** — local Shell, Slurm, PBS, LSF, and Bohrium via DPDispatcher
-- **Guided experiment design** — collaborative dialogue to define experiments before any computation begins
-- **Automatic verification** — outputs checked against success criteria before marking stages done
+## How it works
 
-## Workflow Lifecycle
+```
+                      ┌─────────────────────────────────────┐
+                      │   run-workflow.sh — session loop    │
+                      │   resumes until workflow completes  │
+                      └──────────────┬──────────────────────┘
+                                     │
+   ┌─────────┐   ┌────────┐   ┌────────────┐   ┌────────┐   ┌──────────┐
+   │ Design  │──▶│  Plan  │──▶│  Execute   │──▶│ Verify │──▶│ Complete │
+   └─────────┘   └────────┘   └────────────┘   └────────┘   └──────────┘
+        │            │              │              │             │
+        ▼            ▼              ▼              ▼             ▼
+   experiment-  workflow-     executing-      result-       workflow-
+   design       planning      workflows  +    verification  completion
+                              compute-backend
 
-Every workflow follows five phases:
+   ┌─────────────────────────────────────────────────────────────────┐
+   │  Checkpoint files (survive crashes, enable resumption):         │
+   │  workflow-state.json  ·  progress.log  ·  init.sh               │
+   └─────────────────────────────────────────────────────────────────┘
+```
 
-1. **Design** — collaborative Q&A defines the experiment: system, method, parameters, success criteria (`experiment-design`)
-2. **Plan** — convert the approved design into concrete stages with checkpoint files and an environment bootstrap script (`workflow-planning`)
-3. **Execute** — dispatch a fresh subagent per stage, sequentially, submitting jobs to the configured compute backend (`executing-workflows` + `compute-backend`)
-4. **Verify** — check each stage's outputs against its success criteria before marking it done (`result-verification`)
-5. **Complete** — generate a summary report, update state, and commit (`workflow-completion`)
+Every workflow runs through five phases. Three checkpoint files persist state across sessions, so any new Claude session can recover full context and continue — and `run-workflow.sh` chains sessions automatically until the workflow finishes.
 
-Three skills cut across all phases: `session-resume` recovers full context when a new session starts, `systematic-debugging` investigates root causes when any stage fails, and `checkpoint-management` manages reads and writes to the three state files.
+## Compute backends
+
+| Backend          | Type           | Dispatch                                | Typical use                                              |
+|------------------|----------------|-----------------------------------------|----------------------------------------------------------|
+| `local` (Shell)  | Local          | Sync (≤2 min) / async (longer)          | Quick tests, structure prep, lightweight analysis        |
+| `slurm`          | HPC scheduler  | Async via tmux + `DPDISP_DONE` marker   | Academic clusters                                        |
+
+Both backends share one code path through [DPDispatcher](https://github.com/deepmodeling/dpdispatcher) — the same stage subagent runs whether you target your laptop or a cluster. Async jobs launch in a tmux session and signal completion with a `DPDISP_DONE` marker file, so the orchestrator can poll without holding context.
 
 ## Skills
 
-| Group | Skill | Purpose |
-|---|---|---|
-| Bootstrap | `using-superscientist` | Session start awareness |
-| Bootstrap | `session-resume` | Cross-session recovery from checkpoint files |
-| Design | `experiment-design` | Collaborative dialogue to define experiments |
-| Planning | `workflow-planning` | Convert design into staged execution plan |
-| Execution | `executing-workflows` | Sequential subagent dispatch |
-| Execution | `compute-backend` | Submit jobs to any backend via DPDispatcher |
-| Quality | `result-verification` | Verify outputs before marking done |
-| Quality | `systematic-debugging` | Root cause investigation for failed stages |
-| State | `checkpoint-management` | File-centric state system (JSON + log + init script) |
-| Completion | `workflow-completion` | Summary report, archive, commit |
+Ten skills cover the full workflow. Subagents invoke them automatically — you don't call them directly.
 
-## Compute Backend
+| Group       | Skill                    | Purpose                                                          |
+|-------------|--------------------------|------------------------------------------------------------------|
+| Bootstrap   | `using-superscientist`   | Session-start awareness                                          |
+| Bootstrap   | `session-resume`         | Recover full context from checkpoint files on a fresh session    |
+| Design      | `experiment-design`      | Collaborative dialogue to define the experiment                  |
+| Planning    | `workflow-planning`      | Convert the approved design into staged execution plan           |
+| Execution   | `executing-workflows`    | Sequential subagent dispatch, one stage at a time                |
+| Execution   | `compute-backend`        | Submit jobs to local or HPC backends via DPDispatcher            |
+| Quality     | `result-verification`    | Verify each stage's outputs against success criteria             |
+| Quality     | `systematic-debugging`   | Root-cause investigation when a stage fails                      |
+| State       | `checkpoint-management`  | Read/write the three-file state system                           |
+| Completion  | `workflow-completion`    | Summary report, archive, commit                                  |
 
-The `compute-backend` skill provides a unified interface for submitting computations to any backend — local Shell, Slurm, PBS, LSF, or Bohrium — through [DPDispatcher](https://github.com/deepmodeling/dpdispatcher). One code path handles both local and remote execution.
+## Run until done — `run-workflow.sh`
 
-**How it works:**
+Workflows often span hours or days; Claude sessions are bounded. `run-workflow.sh` is a thin shell wrapper that launches `claude -p "Invoke session-resume"` in a loop and exits only when the workflow's state file reports `completed`, `blocked`, or `error`.
 
-1. The stage subagent prepares input scripts and files
-2. `compute-backend` builds a `submission.json` describing the job (machine, resources, task, file transfers)
-3. The submission is validated with a schema check and dry-run before dispatch
-4. DPDispatcher handles submission, polling, and file transfer
+```bash
+./run-workflow.sh /path/to/workflow-dir
+```
 
-**Sync vs. async dispatch:**
+Built-in safeguards:
 
-- **Sync** — local backend jobs expected to finish in under 2 minutes run inline; `dpdisp submit` blocks until complete
-- **Async** — remote backends (or local jobs over 2 minutes) launch in a tmux session; a `DPDISP_DONE` marker file signals completion so the orchestrator can poll without holding context
+- **Max-session cap** (default 20) — prevents runaway loops
+- **Per-session timeout** (default 2h)
+- **Rapid-failure detection** — halts after 3 consecutive sessions under 60s that made no progress
+- **Pause gate** — `touch PAUSE` in the workflow dir to suspend without killing
 
-Stage subagents invoke `compute-backend` automatically. Users do not call it directly.
+Drop the wrapper, and the workflow is still fully resumable — any human can run `claude` in the directory, and `session-resume` will pick up the state from the checkpoint files.
 
-## Workflow Reviewer
+## How it survives crashes
 
-The `workflow-reviewer` agent audits workflow checkpoint files for correctness and health. Use it after unexpected session termination, before resuming a stale workflow, or as a general health check.
+All state lives in three plain files inside the workflow directory:
 
-**What it checks:**
+| File                  | Role                                                                                  |
+|-----------------------|---------------------------------------------------------------------------------------|
+| `workflow-state.json` | Structured state: stages, statuses, retry counts, backend profiles, success criteria  |
+| `progress.log`        | Append-only timeline of what happened, when                                           |
+| `init.sh`             | Environment bootstrap — loads modules, activates envs, exports paths                  |
 
-- JSON validity and required fields in `workflow-state.json`
-- Stage status consistency (e.g., completed stages have `completed_at` timestamps)
-- Stale processes (running stages whose PIDs are no longer alive)
-- Output file existence for completed stages
-- Dependency DAG validity (no cycles, no dangling references)
+No daemon, no database, no in-memory state. A `kill -9`, a laptop crash, a session reset — none of them destroy progress. The next `session-resume` reads the three files and continues exactly where the last session stopped, including jobs already submitted to Slurm.
 
-**Output:** categorized findings (Critical / Warning / Info) with a health verdict — HEALTHY, NEEDS_ATTENTION, or BROKEN.
+## Pair with physics skills
+
+Superscientist is the orchestration harness. The simulation packages it drives — LAMMPS, GROMACS, CP2K, PySCF, MACE, ASE, RDKit, pymatgen, OVITO, packmol, freud, and more — live in a companion skill marketplace:
+
+🔗 **[WuGroup-XJTLU/cc-skills-ZhenghaoWu-Group](https://github.com/WuGroup-XJTLU/cc-skills-ZhenghaoWu-Group)** — 22 installable skills covering molecular dynamics, quantum chemistry, ML potentials, materials informatics, and analysis.
+
+Install whichever you need; superscientist remains software-agnostic by design.
 
 ## Installation
 
-Clone or copy the plugin directory, then register it with your editor:
-
-### Claude Code
-
 ```bash
-git clone <repo-url> && cd superscientist
-# Then register the plugin:
-/install-plugin /path/to/superscientist
+git clone <repo-url>
+cd superscientist
 ```
 
-### Cursor
+Then register with your editor:
 
-```
-/add-plugin /path/to/superscientist
-```
+- **Claude Code:** `/install-plugin /path/to/superscientist`
+- **Cursor:** `/add-plugin /path/to/superscientist`
+- **OpenCode:** point your config at `.opencode/plugins/superscientist.js`
 
-### OpenCode
+A `SessionStart` hook auto-invokes `using-superscientist` so the agent knows the harness is available.
 
-Point your OpenCode configuration at the ESM entry point:
+## Health check — `workflow-reviewer` agent
 
-```
-.opencode/plugins/superscientist.js
-```
+A bundled agent that audits a workflow directory: JSON validity, stage-status consistency, stale PIDs, missing outputs, dependency cycles. Returns a verdict — `HEALTHY` / `NEEDS_ATTENTION` / `BROKEN`. Use after unexpected termination, before resuming a stale workflow, or as a general spot check.
 
-## Project Structure
+## References
 
-```
-superscientist/
-  skills/          — 10 skill definitions (SKILL.md each)
-  agents/          — workflow-reviewer agent
-  hooks/           — SessionStart hooks (Claude Code + Cursor)
-  .claude-plugin/  — Claude Code marketplace metadata
-  .cursor-plugin/  — Cursor plugin config
-  .opencode/       — OpenCode ESM plugin entry point
-  package.json     — NPM package metadata
-  README.md        — this file
-```
-
-## Reference
-
-- [Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents)
+- [Effective Harnesses for Long-Running Agents](https://www.anthropic.com/engineering/effective-harnesses-for-long-running-agents) — Anthropic engineering
+- [DPDispatcher](https://github.com/deepmodeling/dpdispatcher) — the unified job-submission library
+- Related projects: [obra/superpowers](https://github.com/obra/superpowers) (agentic methodology), [EvoScientist](https://github.com/EvoScientist/EvoScientist) (self-evolving research agents), [ARIS](https://github.com/wanshuiyin/Auto-claude-code-research-in-sleep) (in-sleep research methodology)
