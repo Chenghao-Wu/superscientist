@@ -10,6 +10,17 @@ Ship a reproducible LAMMPS execution environment as a Docker image, published to
 
 The image is the **compute runtime only**. Claude Code and the superscientist plugin remain on the host. The host invokes LAMMPS inside the container via thin wrapper scripts that superscientist's `compute-backend` skill calls transparently — superscientist never knows about Docker.
 
+## Repository split (hybrid layout)
+
+Work spans **two repositories** with clearly separated concerns:
+
+| Repo | Owns | Why separate |
+|---|---|---|
+| `superscientist` (existing) | Host-side wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`), README pointer to the image repo | Wrappers ship alongside the plugin's `compute-backend` skill — they're needed wherever the plugin is installed. |
+| `superscientist-lammps` (new) | `Dockerfile`, `environment.yml`, conda lockfiles, smoke test, `docker-publish.yml` CI, image release tags | Image build/publish lifecycle is independent of plugin development. Avoids churning plugin CI on every image rebuild, and avoids churning image CI on every plugin commit. |
+
+The image publishes to `ghcr.io/<owner>/superscientist-lammps`. Wrappers in `superscientist` default to that path and accept `SUPERSCIENTIST_LAMMPS_IMAGE` env-var overrides.
+
 ## Non-goals
 
 - GPU support (CPU-only build)
@@ -100,35 +111,44 @@ Pull-request builds produce no published tags — they build and smoke-test only
 
 `linux/amd64` and `linux/arm64`, published as a single multi-arch manifest via `docker buildx`. Arm64 layers built under QEMU emulation on the amd64 GitHub-hosted runner (≈ 5× slower than native, still finishes the smoke test in seconds).
 
-## Repo layout (additions to existing superscientist repo)
+## Repo layouts
+
+### Additions to existing `superscientist` repo
 
 ```
 superscientist/
-├── docker/
-│   ├── Dockerfile
-│   ├── environment.yml           # human-edited package list
-│   ├── conda-linux-64.lock       # generated, committed
-│   ├── conda-linux-aarch64.lock  # generated, committed
-│   ├── smoke-test.lmp            # Lennard-Jones melt, 50 atoms, 100 steps
-│   └── README.md                 # how to rebuild, regenerate lockfiles
 ├── bin/
 │   ├── lmp                       # host wrapper → `docker run … lmp "$@"`
 │   ├── lmp-python                # host wrapper → `docker run … python "$@"`
 │   └── lmp-shell                 # host wrapper → `docker run -it … bash`
+└── README.md                     # add "Reproducible LAMMPS environment" section,
+                                  # linking to superscientist-lammps repo
+```
+
+### New `superscientist-lammps` repo
+
+```
+superscientist-lammps/
+├── Dockerfile
+├── environment.yml               # human-edited package list
+├── conda-linux-64.lock           # generated, committed
+├── conda-linux-aarch64.lock      # generated, committed
+├── smoke-test.lmp                # Lennard-Jones melt, 50 atoms, 100 steps
 ├── .github/workflows/
 │   └── docker-publish.yml        # build + smoke-test + push (multi-arch)
-└── README.md                     # add "Reproducible LAMMPS environment" section
+├── README.md                     # rebuild, regenerate lockfiles, link back to superscientist
+└── LICENSE
 ```
 
 ## Components
 
-### Dockerfile
+### Dockerfile (in `superscientist-lammps` repo)
 
 ```dockerfile
 FROM mambaorg/micromamba:2.0-ubuntu24.04
 ARG TARGETARCH
-COPY docker/conda-linux-64.lock /tmp/lock-amd64
-COPY docker/conda-linux-aarch64.lock /tmp/lock-arm64
+COPY conda-linux-64.lock /tmp/lock-amd64
+COPY conda-linux-aarch64.lock /tmp/lock-arm64
 USER root
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
       micromamba install -y -n base --file /tmp/lock-amd64 ; \
@@ -143,7 +163,7 @@ ENTRYPOINT ["/usr/local/bin/_entrypoint.sh"]
 CMD ["bash"]
 ```
 
-### Host wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`)
+### Host wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell` — in `superscientist` repo)
 
 Each is a ~10-line POSIX shell script. Shared behavior:
 
@@ -155,7 +175,7 @@ Each is a ~10-line POSIX shell script. Shared behavior:
 
 Users place `bin/` on `PATH` (documented in README).
 
-### Smoke test (`docker/smoke-test.lmp`)
+### Smoke test (`smoke-test.lmp` — in `superscientist-lammps` repo)
 
 50-atom Lennard-Jones melt, 100 timesteps, NVE. No external data files. Verifies pair-style, neighbor lists, integrator. Completes in <1 s.
 
@@ -175,7 +195,7 @@ fix         1 all nve
 run         100
 ```
 
-### CI workflow (`.github/workflows/docker-publish.yml`)
+### CI workflow (`.github/workflows/docker-publish.yml` — in `superscientist-lammps` repo)
 
 Triggers:
 - Push to `main` → build + smoke-test + push `:latest` and `:sha-<short>`
@@ -211,5 +231,6 @@ Single job, no matrix — `buildx` produces the multi-arch manifest in one invoc
 
 ## Open items
 
-- Confirm the GitHub repo owner / namespace so the GHCR path can be written into the wrappers and CI. Currently `<repo-owner>` in this doc.
+- Confirm the GitHub repo owner / namespace so the GHCR path can be written into the wrappers and CI. Currently `<owner>` in this doc.
+- Create the new `superscientist-lammps` repository under that owner.
 - First image release tag (suggested: `v0.1.0` after the manual end-to-end test passes).
