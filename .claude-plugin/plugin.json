@@ -1,0 +1,17 @@
+{
+  "name": "superscientist",
+  "description": "File-centric, resumable harness for computational science workflows",
+  "version": "0.1.0",
+  "author": {
+    "name": "Zhenghao Wu"
+  },
+  "license": "MIT",
+  "keywords": [
+    "skills",
+    "computational-chemistry",
+    "materials-science",
+    "workflow",
+    "harness",
+    "resumable"
+  ]
+}

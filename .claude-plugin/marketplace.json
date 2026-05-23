@@ -1,0 +1,16 @@
+{
+  "name": "superscientist-marketplace",
+  "description": "Superscientist — file-centric, resumable harness for computational science workflows",
+  "owner": {
+    "name": "Zhenghao Wu",
+    "url": "https://github.com/Chenghao-Wu"
+  },
+  "plugins": [
+    {
+      "name": "superscientist",
+      "description": "File-centric, resumable harness with experiment design, workflow planning, subagent-driven execution, compute-backend dispatch, result verification, and cross-session resume",
+      "version": "0.1.0",
+      "source": "./"
+    }
+  ]
+}
