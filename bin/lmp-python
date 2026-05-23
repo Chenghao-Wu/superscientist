@@ -1,0 +1,18 @@
+#!/bin/sh
+# bin/lmp-python — host wrapper running the Python interpreter from the
+# examples-superscientist image. Use for analysis scripts that need the same
+# packages as the LAMMPS env (ase, lammpsio, freud, numpy, matplotlib).
+
+set -e
+
+IMAGE="${EXAMPLES_SUPERSCIENTIST_IMAGE:-ghcr.io/Chenghao-Wu/examples-superscientist:latest}"
+
+if ! command -v docker >/dev/null 2>&1; then
+  echo "Error: docker not found. Install Docker Desktop or Docker Engine, then retry." >&2
+  exit 127
+fi
+
+exec docker run --rm \
+  -v "$PWD:/work" -w /work \
+  --user "$(id -u):$(id -g)" \
+  "$IMAGE" python "$@"
