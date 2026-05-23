@@ -1,3 +1,6 @@
 # Only superscientist/ and .gitignore are tracked
 # Everything else is local-only
 !.gitignore
+
+# Local-only working docs (specs, plans)
+docs/
