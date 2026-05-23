@@ -17,9 +17,9 @@ Work spans **two repositories** with clearly separated concerns:
 | Repo | Owns | Why separate |
 |---|---|---|
 | `superscientist` (existing) | Host-side wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`), README pointer to the image repo | Wrappers ship alongside the plugin's `compute-backend` skill — they're needed wherever the plugin is installed. |
-| `example-superscientist` (new) | `Dockerfile`, `environment.yml`, conda lockfiles, smoke test, `docker-publish.yml` CI, image release tags | Image build/publish lifecycle is independent of plugin development. Avoids churning plugin CI on every image rebuild, and avoids churning image CI on every plugin commit. |
+| `examples-superscientist` (new) | `Dockerfile`, `environment.yml`, conda lockfiles, smoke test, `docker-publish.yml` CI, image release tags | Image build/publish lifecycle is independent of plugin development. Avoids churning plugin CI on every image rebuild, and avoids churning image CI on every plugin commit. |
 
-The image publishes to `ghcr.io/<owner>/example-superscientist`. Wrappers in `superscientist` default to that path and accept `EXAMPLE_SUPERSCIENTIST_IMAGE` env-var overrides.
+The image publishes to `ghcr.io/Chenghao-Wu/examples-superscientist`. Wrappers in `superscientist` default to that path and accept `EXAMPLES_SUPERSCIENTIST_IMAGE` env-var overrides.
 
 ## Non-goals
 
@@ -51,7 +51,7 @@ The image publishes to `ghcr.io/<owner>/example-superscientist`. Wrappers in `su
 │                                              └────────┬────────┘          │
 └───────────────────────────────────────────────────────┼───────────────────┘
                                                         ▼
-┌─────── ghcr.io/<repo-owner>/example-superscientist:<tag> ─────────────────┐
+┌─────── ghcr.io/Chenghao-Wu/examples-superscientist:<tag> ─────────────────┐
 │   micromamba env: lammps + dpdispatcher + ase + lammpsio + freud +       │
 │                   numpy + matplotlib + python 3.12 + MPI                 │
 │   /work  ← bind-mounted host workdir                                     │
@@ -88,7 +88,7 @@ Image size target: **≤ 2 GB** uncompressed (≤ 1 GB compressed on GHCR).
 
 **Pinning strategy: `conda-lock`.**
 
-- `environment.yml` (in `example-superscientist` repo root) — human-edited package list with version floors (e.g., `lammps>=2024.08.29`, `python=3.12.*`).
+- `environment.yml` (in `examples-superscientist` repo root) — human-edited package list with version floors (e.g., `lammps>=2024.08.29`, `python=3.12.*`).
 - `conda-linux-64.lock` and `conda-linux-aarch64.lock` (same repo root) — `conda-lock`-generated lockfiles pinning every transitive dependency down to the build hash. **These are the source of truth installed during the build.**
 - Regeneration: `conda-lock --file environment.yml --platform linux-64 --platform linux-aarch64`. Lockfiles are committed.
 - Base image pinned by tag (`mambaorg/micromamba:2.0-ubuntu24.04`). Digest-pinning is deferred (maximal-rigor approach).
@@ -97,7 +97,7 @@ Image size target: **≤ 2 GB** uncompressed (≤ 1 GB compressed on GHCR).
 
 ## Image tagging
 
-Published to `ghcr.io/<repo-owner>/example-superscientist`:
+Published to `ghcr.io/Chenghao-Wu/examples-superscientist`:
 
 | Tag | Source event | Purpose |
 |---|---|---|
@@ -122,13 +122,13 @@ superscientist/
 │   ├── lmp-python                # host wrapper → `docker run … python "$@"`
 │   └── lmp-shell                 # host wrapper → `docker run -it … bash`
 └── README.md                     # add "Reproducible LAMMPS environment" section,
-                                  # linking to example-superscientist repo
+                                  # linking to examples-superscientist repo
 ```
 
-### New `example-superscientist` repo
+### New `examples-superscientist` repo
 
 ```
-example-superscientist/
+examples-superscientist/
 ├── Dockerfile
 ├── environment.yml               # human-edited package list
 ├── conda-linux-64.lock           # generated, committed
@@ -142,7 +142,7 @@ example-superscientist/
 
 ## Components
 
-### Dockerfile (in `example-superscientist` repo)
+### Dockerfile (in `examples-superscientist` repo)
 
 ```dockerfile
 FROM mambaorg/micromamba:2.0-ubuntu24.04
@@ -167,7 +167,7 @@ CMD ["bash"]
 
 Each is a ~10-line POSIX shell script. Shared behavior:
 
-- Resolve image from `${EXAMPLE_SUPERSCIENTIST_IMAGE:-ghcr.io/<repo-owner>/example-superscientist:latest}`.
+- Resolve image from `${EXAMPLES_SUPERSCIENTIST_IMAGE:-ghcr.io/Chenghao-Wu/examples-superscientist:latest}`.
 - `docker run --rm -v "$PWD:/work" -w /work --user "$(id -u):$(id -g)" "$IMAGE" <cmd> "$@"`.
 - For `lmp-shell`: add `-it` and run `bash` instead of a fixed entrypoint.
 - Pre-flight check: if `docker` is not on PATH, print actionable error and exit 127.
@@ -175,7 +175,7 @@ Each is a ~10-line POSIX shell script. Shared behavior:
 
 Users place `bin/` on `PATH` (documented in README).
 
-### Smoke test (`smoke-test.lmp` — in `example-superscientist` repo)
+### Smoke test (`smoke-test.lmp` — in `examples-superscientist` repo)
 
 50-atom Lennard-Jones melt, 100 timesteps, NVE. No external data files. Verifies pair-style, neighbor lists, integrator. Completes in <1 s.
 
@@ -195,7 +195,7 @@ fix         1 all nve
 run         100
 ```
 
-### CI workflow (`.github/workflows/docker-publish.yml` — in `example-superscientist` repo)
+### CI workflow (`.github/workflows/docker-publish.yml` — in `examples-superscientist` repo)
 
 Triggers:
 - Push to `main` → build + smoke-test + push `:latest` and `:sha-<short>`
@@ -231,6 +231,6 @@ Single job, no matrix — `buildx` produces the multi-arch manifest in one invoc
 
 ## Open items
 
-- Confirm the GitHub repo owner / namespace so the GHCR path can be written into the wrappers and CI. Currently `<owner>` in this doc.
-- Create the new `example-superscientist` repository under that owner.
+- Confirm the GitHub repo owner / namespace so the GHCR path can be written into the wrappers and CI. Currently `Chenghao-Wu` in this doc.
+- Create the new `examples-superscientist` repository under that owner.
 - First image release tag (suggested: `v0.1.0` after the manual end-to-end test passes).

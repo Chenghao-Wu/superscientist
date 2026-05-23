@@ -4,7 +4,7 @@
 
 **Goal:** Ship a reproducible LAMMPS Docker image to GHCR + host-side wrapper scripts in superscientist so collaborators can pull one image and reproduce LAMMPS demonstrations.
 
-**Architecture:** Two repos. `example-superscientist` (new) holds the Dockerfile, conda lockfiles, smoke test, and GitHub Actions CI that builds + publishes a multi-arch image to `ghcr.io/<owner>/example-superscientist`. `superscientist` (existing) gains `bin/lmp`, `bin/lmp-python`, `bin/lmp-shell` wrapper scripts that invoke the image via `docker run`, transparent to the plugin's `compute-backend` skill.
+**Architecture:** Two repos. `examples-superscientist` (new) holds the Dockerfile, conda lockfiles, smoke test, and GitHub Actions CI that builds + publishes a multi-arch image to `ghcr.io/Chenghao-Wu/examples-superscientist`. `superscientist` (existing) gains `bin/lmp`, `bin/lmp-python`, `bin/lmp-shell` wrapper scripts that invoke the image via `docker run`, transparent to the plugin's `compute-backend` skill.
 
 **Tech Stack:** Docker (`buildx` for multi-arch), `mambaorg/micromamba` base image, `conda-lock` for dependency pinning, GitHub Actions, GHCR, POSIX shell.
 
@@ -22,29 +22,31 @@ Before starting, the engineer needs:
 - **`uvx`** (from `astral-uv`) for running `conda-lock` without installing it globally.
 - **`git`** with commit-signing configured if the repos require it.
 
-Set the GitHub owner once and use `$OWNER` throughout this plan:
+**GitHub target:** the new repo is hosted at `https://github.com/Chenghao-Wu/examples-superscientist` (already created on GitHub by the user as of 2026-05-23). The commands below reference `Chenghao-Wu` directly; if a future fork lands under a different owner, search-and-replace.
+
+For convenience, you can set:
 
 ```bash
-export OWNER="<your-github-username-or-org>"
+export OWNER="Chenghao-Wu"
 ```
 
-Every later command that references `<owner>` should be substituted with `$OWNER`. The literal string `<owner>` must NOT appear in any committed file — replace it with the real value before committing.
+so commands that read `$OWNER` Just Work, but the value baked into the Dockerfile, CI workflow, README, and wrapper scripts is `Chenghao-Wu`.
 
 ---
 
-## Phase 1: `example-superscientist` repo (new)
+## Phase 1: `examples-superscientist` repo (new)
 
 ### Task 1: Initialize the new repo locally and on GitHub
 
 **Files:**
-- Create: `~/Documents/example-superscientist/` (new directory, sibling of `superscientist/`)
-- Create: `~/Documents/example-superscientist/.gitignore`
+- Create: `~/Documents/examples-superscientist/` (new directory, sibling of `superscientist/`)
+- Create: `~/Documents/examples-superscientist/.gitignore`
 
 - [ ] **Step 1: Create the local directory and initialize git**
 
 ```bash
-mkdir -p ~/Documents/example-superscientist
-cd ~/Documents/example-superscientist
+mkdir -p ~/Documents/examples-superscientist
+cd ~/Documents/examples-superscientist
 git init -b main
 ```
 
@@ -66,35 +68,43 @@ log.lammps
 - [ ] **Step 3: Make an initial empty commit so the repo has a HEAD**
 
 ```bash
-git commit --allow-empty -m "chore: initialize example-superscientist"
+git commit --allow-empty -m "chore: initialize examples-superscientist"
 ```
 
-- [ ] **Step 4: Create the GitHub repo and push**
+- [ ] **Step 4: Wire up the existing GitHub remote**
+
+The repo already exists on GitHub. Just add the remote and push:
 
 ```bash
-gh repo create "$OWNER/example-superscientist" \
-  --public \
-  --description "Reproducible LAMMPS Docker environment for superscientist demos" \
-  --source . --remote origin --push
+git remote add origin https://github.com/Chenghao-Wu/examples-superscientist.git
+git push -u origin main
 ```
 
-Expected: `gh` reports the repo was created, the initial commit is pushed.
+If the remote repo on GitHub is non-empty (e.g., has a default README), fetch and rebase first:
+
+```bash
+git fetch origin
+git rebase origin/main || git pull --rebase --allow-unrelated-histories origin main
+git push -u origin main
+```
+
+Expected: the initial commit is pushed; `git status` shows `Your branch is up to date with 'origin/main'`.
 
 - [ ] **Step 5: Verify the remote**
 
 ```bash
-gh repo view "$OWNER/example-superscientist" --web
+gh repo view Chenghao-Wu/examples-superscientist
 git remote -v
 ```
 
-Expected: remote `origin` points to `https://github.com/$OWNER/example-superscientist.git`.
+Expected: remote `origin` points to `https://github.com/Chenghao-Wu/examples-superscientist.git`.
 
 ---
 
 ### Task 2: Write `environment.yml`
 
 **Files:**
-- Create: `~/Documents/example-superscientist/environment.yml`
+- Create: `~/Documents/examples-superscientist/environment.yml`
 
 - [ ] **Step 1: Define the test — `conda-lock` should accept this file**
 
@@ -127,7 +137,7 @@ Note: `matplotlib-base` (instead of `matplotlib`) skips the GUI toolkits we don'
 - [ ] **Step 3: Commit**
 
 ```bash
-cd ~/Documents/example-superscientist
+cd ~/Documents/examples-superscientist
 git add environment.yml
 git commit -m "feat: add conda environment spec for LAMMPS + analysis libs"
 ```
@@ -137,8 +147,8 @@ git commit -m "feat: add conda environment spec for LAMMPS + analysis libs"
 ### Task 3: Generate conda lockfiles
 
 **Files:**
-- Create: `~/Documents/example-superscientist/conda-linux-64.lock`
-- Create: `~/Documents/example-superscientist/conda-linux-aarch64.lock`
+- Create: `~/Documents/examples-superscientist/conda-linux-64.lock`
+- Create: `~/Documents/examples-superscientist/conda-linux-aarch64.lock`
 
 - [ ] **Step 1: Write the test — lockfile generation must be reproducible**
 
@@ -147,7 +157,7 @@ The "test" for reproducibility is running `conda-lock` twice and verifying the o
 - [ ] **Step 2: Generate the lockfiles**
 
 ```bash
-cd ~/Documents/example-superscientist
+cd ~/Documents/examples-superscientist
 uvx --from conda-lock conda-lock \
   --file environment.yml \
   --platform linux-64 \
@@ -196,7 +206,7 @@ git commit -m "feat: generate conda lockfiles for linux-64 and linux-aarch64"
 ### Task 4: Write the smoke test
 
 **Files:**
-- Create: `~/Documents/example-superscientist/smoke-test.lmp`
+- Create: `~/Documents/examples-superscientist/smoke-test.lmp`
 
 - [ ] **Step 1: Write the test — `lmp -in smoke-test.lmp` must exit 0 and log "Total wall time"**
 
@@ -234,7 +244,7 @@ git commit -m "feat: add Lennard-Jones smoke test for image CI"
 ### Task 5: Write the Dockerfile
 
 **Files:**
-- Create: `~/Documents/example-superscientist/Dockerfile`
+- Create: `~/Documents/examples-superscientist/Dockerfile`
 
 - [ ] **Step 1: Write the test — `docker build` for amd64 must succeed**
 
@@ -299,11 +309,11 @@ Expected: `binfmt` reports supported platforms now include `arm64`.
 - [ ] **Step 2: Build the amd64 image locally**
 
 ```bash
-cd ~/Documents/example-superscientist
+cd ~/Documents/examples-superscientist
 docker buildx build \
   --platform linux/amd64 \
   --load \
-  -t example-superscientist:local-amd64 \
+  -t examples-superscientist:local-amd64 \
   .
 ```
 
@@ -312,7 +322,7 @@ Expected: build succeeds in ~5-10 min (conda solve + downloads). Final image loa
 - [ ] **Step 3: Check image size**
 
 ```bash
-docker images example-superscientist:local-amd64
+docker images examples-superscientist:local-amd64
 ```
 
 Expected: size under 2 GB. If significantly larger, investigate before continuing.
@@ -323,7 +333,7 @@ Expected: size under 2 GB. If significantly larger, investigate before continuin
 docker run --rm \
   -v "$PWD:/work" -w /work \
   --user "$(id -u):$(id -g)" \
-  example-superscientist:local-amd64 \
+  examples-superscientist:local-amd64 \
   lmp -in smoke-test.lmp
 ```
 
@@ -340,7 +350,7 @@ Expected: a line like `Total wall time: 0:00:00`. Non-zero output = success.
 - [ ] **Step 6: Verify Python env is usable**
 
 ```bash
-docker run --rm example-superscientist:local-amd64 \
+docker run --rm examples-superscientist:local-amd64 \
   python -c "import lammps, ase, lammpsio, freud, numpy, matplotlib; print('ok')"
 ```
 
@@ -352,13 +362,13 @@ Expected: prints `ok` and exits 0.
 docker buildx build \
   --platform linux/arm64 \
   --load \
-  -t example-superscientist:local-arm64 \
+  -t examples-superscientist:local-arm64 \
   .
 
 docker run --rm --platform linux/arm64 \
   -v "$PWD:/work" -w /work \
   --user "$(id -u):$(id -g)" \
-  example-superscientist:local-arm64 \
+  examples-superscientist:local-arm64 \
   lmp -in smoke-test.lmp
 
 grep "Total wall time" log.lammps
@@ -369,7 +379,7 @@ Expected: build and smoke test succeed under QEMU. May take 15-30 min depending 
 - [ ] **Step 8: Clean up local images (optional, frees disk)**
 
 ```bash
-docker image rm example-superscientist:local-amd64 example-superscientist:local-arm64
+docker image rm examples-superscientist:local-amd64 examples-superscientist:local-arm64
 rm -f log.lammps
 ```
 
@@ -380,7 +390,7 @@ rm -f log.lammps
 ### Task 7: Write the GitHub Actions workflow
 
 **Files:**
-- Create: `~/Documents/example-superscientist/.github/workflows/docker-publish.yml`
+- Create: `~/Documents/examples-superscientist/.github/workflows/docker-publish.yml`
 
 - [ ] **Step 1: Write the test — pushing to a branch should produce a green CI run that does NOT push (PR/branch builds are smoke-test only). Pushing to `main` should push `:latest` + `:sha-…`. Tagging `vX.Y.Z` should push that tag.**
 
@@ -389,7 +399,7 @@ We verify by pushing in Task 8.
 - [ ] **Step 2: Create the directory**
 
 ```bash
-mkdir -p ~/Documents/example-superscientist/.github/workflows
+mkdir -p ~/Documents/examples-superscientist/.github/workflows
 ```
 
 - [ ] **Step 3: Write the workflow**
@@ -456,7 +466,7 @@ jobs:
         id: meta
         uses: docker/metadata-action@v5
         with:
-          images: ghcr.io/${{ github.repository_owner }}/example-superscientist
+          images: ghcr.io/${{ github.repository_owner }}/examples-superscientist
           tags: |
             type=ref,event=branch
             type=raw,value=latest,enable={{is_default_branch}}
@@ -508,7 +518,7 @@ git commit -m "ci: build, smoke-test, and publish multi-arch image to GHCR"
 - [ ] **Step 1: Push to main**
 
 ```bash
-cd ~/Documents/example-superscientist
+cd ~/Documents/examples-superscientist
 git push origin main
 ```
 
@@ -525,7 +535,7 @@ If the lockfile-drift step fails, the lockfiles committed locally don't match wh
 - [ ] **Step 3: Verify the image is published**
 
 ```bash
-gh api "/users/$OWNER/packages/container/example-superscientist/versions" --jq '.[].metadata.container.tags'
+gh api "/users/$OWNER/packages/container/examples-superscientist/versions" --jq '.[].metadata.container.tags'
 ```
 
 Expected: a list including `latest` and a `sha-…` tag.
@@ -533,11 +543,11 @@ Expected: a list including `latest` and a `sha-…` tag.
 - [ ] **Step 4: Pull and run the published image**
 
 ```bash
-docker pull "ghcr.io/$OWNER/example-superscientist:latest"
+docker pull "ghcr.io/$OWNER/examples-superscientist:latest"
 mkdir -p /tmp/smoke && cp smoke-test.lmp /tmp/smoke/
 docker run --rm -v /tmp/smoke:/work -w /work \
   --user "$(id -u):$(id -g)" \
-  "ghcr.io/$OWNER/example-superscientist:latest" \
+  "ghcr.io/$OWNER/examples-superscientist:latest" \
   lmp -in smoke-test.lmp
 grep "Total wall time" /tmp/smoke/log.lammps
 rm -rf /tmp/smoke
@@ -552,15 +562,15 @@ Expected: image pulls (single-digit GB compressed), runs the smoke test, exits 0
 ### Task 9: Write README and LICENSE; tag `v0.1.0`
 
 **Files:**
-- Create: `~/Documents/example-superscientist/README.md`
-- Create: `~/Documents/example-superscientist/LICENSE`
+- Create: `~/Documents/examples-superscientist/README.md`
+- Create: `~/Documents/examples-superscientist/LICENSE`
 
 - [ ] **Step 1: Write `LICENSE` (MIT)**
 
 ```
 MIT License
 
-Copyright (c) 2026 <copyright holder name>
+Copyright (c) 2026 Zhenghao Wu
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -581,26 +591,26 @@ OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
 
-Replace `<copyright holder name>` with your name.
+Replace `Zhenghao Wu` with your name.
 
 - [ ] **Step 2: Write `README.md`**
 
-Use this content, substituting `<owner>` with the actual GitHub owner:
+Use this content, substituting `Chenghao-Wu` with the actual GitHub owner:
 
 ````markdown
-# example-superscientist
+# examples-superscientist
 
-Reproducible LAMMPS Docker environment for [superscientist](https://github.com/<owner>/superscientist) demonstrations.
+Reproducible LAMMPS Docker environment for [superscientist](https://github.com/Chenghao-Wu/superscientist) demonstrations.
 
 ## Quickstart (consumer)
 
 ```bash
-docker pull ghcr.io/<owner>/example-superscientist:latest
+docker pull ghcr.io/Chenghao-Wu/examples-superscientist:latest
 mkdir lj-demo && cd lj-demo
-curl -O https://raw.githubusercontent.com/<owner>/example-superscientist/main/smoke-test.lmp
+curl -O https://raw.githubusercontent.com/Chenghao-Wu/examples-superscientist/main/smoke-test.lmp
 docker run --rm -v "$PWD:/work" -w /work \
   --user "$(id -u):$(id -g)" \
-  ghcr.io/<owner>/example-superscientist:latest \
+  ghcr.io/Chenghao-Wu/examples-superscientist:latest \
   lmp -in smoke-test.lmp
 ```
 
@@ -611,7 +621,7 @@ For interactive use:
 ```bash
 docker run --rm -it -v "$PWD:/work" -w /work \
   --user "$(id -u):$(id -g)" \
-  ghcr.io/<owner>/example-superscientist:latest \
+  ghcr.io/Chenghao-Wu/examples-superscientist:latest \
   bash
 ```
 
@@ -626,12 +636,12 @@ Base image: `mambaorg/micromamba:2.0-ubuntu24.04`. Architectures: `linux/amd64`,
 
 ## Use with superscientist
 
-The [superscientist](https://github.com/<owner>/superscientist) repo ships host wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`) that hide the `docker run` invocation. Add `superscientist/bin/` to your `PATH` and superscientist's `compute-backend` skill will call `lmp` transparently.
+The [superscientist](https://github.com/Chenghao-Wu/superscientist) repo ships host wrappers (`bin/lmp`, `bin/lmp-python`, `bin/lmp-shell`) that hide the `docker run` invocation. Add `superscientist/bin/` to your `PATH` and superscientist's `compute-backend` skill will call `lmp` transparently.
 
 To pin a specific image version, set:
 
 ```bash
-export EXAMPLE_SUPERSCIENTIST_IMAGE="ghcr.io/<owner>/example-superscientist:v0.1.0"
+export EXAMPLES_SUPERSCIENTIST_IMAGE="ghcr.io/Chenghao-Wu/examples-superscientist:v0.1.0"
 ```
 
 ## Reproducing a demo bit-for-bit
@@ -641,9 +651,9 @@ Always cite a versioned tag (e.g., `v0.1.0`) in shared demos, not `:latest`. The
 ## Rebuilding the image yourself
 
 ```bash
-git clone https://github.com/<owner>/example-superscientist
-cd example-superscientist
-docker buildx build --platform linux/amd64 --load -t example-superscientist:dev .
+git clone https://github.com/Chenghao-Wu/examples-superscientist
+cd examples-superscientist
+docker buildx build --platform linux/amd64 --load -t examples-superscientist:dev .
 ```
 
 ## Updating dependencies
@@ -689,13 +699,13 @@ git push origin v0.1.0
 gh run watch
 ```
 
-Expected: tag-triggered CI build pushes `ghcr.io/$OWNER/example-superscientist:v0.1.0`.
+Expected: tag-triggered CI build pushes `ghcr.io/$OWNER/examples-superscientist:v0.1.0`.
 
 - [ ] **Step 5: Verify the v0.1.0 tag exists on GHCR**
 
 ```bash
-docker pull "ghcr.io/$OWNER/example-superscientist:v0.1.0"
-docker images "ghcr.io/$OWNER/example-superscientist"
+docker pull "ghcr.io/$OWNER/examples-superscientist:v0.1.0"
+docker images "ghcr.io/$OWNER/examples-superscientist"
 ```
 
 Expected: pull succeeds; `v0.1.0` appears in the local image list.
@@ -719,17 +729,17 @@ mkdir -p bin
 
 - [ ] **Step 2: Write the wrapper**
 
-Create `bin/lmp` with this content (substitute `<owner>` with the real owner; the resulting file must have a real owner, not a placeholder):
+Create `bin/lmp` with this content (substitute `Chenghao-Wu` with the real owner; the resulting file must have a real owner, not a placeholder):
 
 ```sh
 #!/bin/sh
-# bin/lmp — host wrapper that runs LAMMPS inside the example-superscientist
+# bin/lmp — host wrapper that runs LAMMPS inside the examples-superscientist
 # Docker image. The plugin's compute-backend skill invokes this as if it were
 # a host-installed `lmp` binary.
 
 set -e
 
-IMAGE="${EXAMPLE_SUPERSCIENTIST_IMAGE:-ghcr.io/<owner>/example-superscientist:latest}"
+IMAGE="${EXAMPLES_SUPERSCIENTIST_IMAGE:-ghcr.io/Chenghao-Wu/examples-superscientist:latest}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Error: docker not found. Install Docker Desktop or Docker Engine, then retry." >&2
@@ -742,7 +752,7 @@ exec docker run --rm \
   "$IMAGE" lmp "$@"
 ```
 
-Replace `<owner>` literally before saving.
+Replace `Chenghao-Wu` literally before saving.
 
 - [ ] **Step 3: Make executable**
 
@@ -755,7 +765,7 @@ chmod +x /Users/bruce/Documents/superscientist/bin/lmp
 ```bash
 cd /tmp
 mkdir -p lmp-wrapper-test && cd lmp-wrapper-test
-curl -O "https://raw.githubusercontent.com/$OWNER/example-superscientist/main/smoke-test.lmp"
+curl -O "https://raw.githubusercontent.com/$OWNER/examples-superscientist/main/smoke-test.lmp"
 /Users/bruce/Documents/superscientist/bin/lmp -in smoke-test.lmp
 grep "Total wall time" log.lammps
 cd / && rm -rf /tmp/lmp-wrapper-test
@@ -774,7 +784,7 @@ Expected: the line `Error: docker not found. Install Docker Desktop or Docker En
 - [ ] **Step 6: Test the env-var override**
 
 ```bash
-EXAMPLE_SUPERSCIENTIST_IMAGE="ghcr.io/$OWNER/example-superscientist:v0.1.0" \
+EXAMPLES_SUPERSCIENTIST_IMAGE="ghcr.io/$OWNER/examples-superscientist:v0.1.0" \
   /Users/bruce/Documents/superscientist/bin/lmp -help | head -5
 ```
 
@@ -801,17 +811,17 @@ We run this in Step 4.
 
 - [ ] **Step 2: Write the wrapper**
 
-Create `bin/lmp-python` (substitute `<owner>`):
+Create `bin/lmp-python` (substitute `Chenghao-Wu`):
 
 ```sh
 #!/bin/sh
 # bin/lmp-python — host wrapper running the Python interpreter from the
-# example-superscientist image. Use for analysis scripts that need the same
+# examples-superscientist image. Use for analysis scripts that need the same
 # packages as the LAMMPS env (ase, lammpsio, freud, numpy, matplotlib).
 
 set -e
 
-IMAGE="${EXAMPLE_SUPERSCIENTIST_IMAGE:-ghcr.io/<owner>/example-superscientist:latest}"
+IMAGE="${EXAMPLES_SUPERSCIENTIST_IMAGE:-ghcr.io/Chenghao-Wu/examples-superscientist:latest}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Error: docker not found. Install Docker Desktop or Docker Engine, then retry." >&2
@@ -858,17 +868,17 @@ We run this in Step 4.
 
 - [ ] **Step 2: Write the wrapper**
 
-Create `bin/lmp-shell` (substitute `<owner>`):
+Create `bin/lmp-shell` (substitute `Chenghao-Wu`):
 
 ```sh
 #!/bin/sh
 # bin/lmp-shell — host wrapper dropping the user into an interactive bash
-# session inside the example-superscientist image. With no args, an
+# session inside the examples-superscientist image. With no args, an
 # interactive shell starts. With args, they are passed to bash (e.g., -c).
 
 set -e
 
-IMAGE="${EXAMPLE_SUPERSCIENTIST_IMAGE:-ghcr.io/<owner>/example-superscientist:latest}"
+IMAGE="${EXAMPLES_SUPERSCIENTIST_IMAGE:-ghcr.io/Chenghao-Wu/examples-superscientist:latest}"
 
 if ! command -v docker >/dev/null 2>&1; then
   echo "Error: docker not found. Install Docker Desktop or Docker Engine, then retry." >&2
@@ -921,16 +931,16 @@ Identify the section right before `## Project Structure` (where infrastructure-y
 
 - [ ] **Step 2: Insert a new section before `## Project Structure`**
 
-Edit `README.md` to add this section just before the existing `## Project Structure` heading. Substitute `<owner>` with the actual GitHub owner:
+Edit `README.md` to add this section just before the existing `## Project Structure` heading. Substitute `Chenghao-Wu` with the actual GitHub owner:
 
 ````markdown
 ## Reproducible LAMMPS environment
 
-LAMMPS-based demos run inside a pinned Docker image published from the companion repo [example-superscientist](https://github.com/<owner>/example-superscientist). The plugin's `compute-backend` skill invokes `lmp` transparently — no special configuration needed beyond putting `bin/` on your `PATH`:
+LAMMPS-based demos run inside a pinned Docker image published from the companion repo [examples-superscientist](https://github.com/Chenghao-Wu/examples-superscientist). The plugin's `compute-backend` skill invokes `lmp` transparently — no special configuration needed beyond putting `bin/` on your `PATH`:
 
 ```bash
 export PATH="/path/to/superscientist/bin:$PATH"
-docker pull ghcr.io/<owner>/example-superscientist:latest   # first time only
+docker pull ghcr.io/Chenghao-Wu/examples-superscientist:latest   # first time only
 ```
 
 Wrappers:
@@ -944,10 +954,10 @@ Wrappers:
 Pin a specific image release for shared / published demos:
 
 ```bash
-export EXAMPLE_SUPERSCIENTIST_IMAGE="ghcr.io/<owner>/example-superscientist:v0.1.0"
+export EXAMPLES_SUPERSCIENTIST_IMAGE="ghcr.io/Chenghao-Wu/examples-superscientist:v0.1.0"
 ```
 
-See [example-superscientist's README](https://github.com/<owner>/example-superscientist) for image internals, rebuild instructions, and how to update dependencies.
+See [examples-superscientist's README](https://github.com/Chenghao-Wu/examples-superscientist) for image internals, rebuild instructions, and how to update dependencies.
 ````
 
 - [ ] **Step 3: Verify the README still renders cleanly**
@@ -998,7 +1008,7 @@ Expected: all three resolve to `/Users/bruce/Documents/superscientist/bin/...`.
 
 ```sh
 mkdir -p /tmp/e2e && cd /tmp/e2e
-curl -O "https://raw.githubusercontent.com/$OWNER/example-superscientist/main/smoke-test.lmp"
+curl -O "https://raw.githubusercontent.com/$OWNER/examples-superscientist/main/smoke-test.lmp"
 lmp -in smoke-test.lmp
 grep "Total wall time" log.lammps
 ```
@@ -1023,7 +1033,7 @@ If you want a coordinated release marker, after CI is green:
 
 ```bash
 cd /Users/bruce/Documents/superscientist
-git tag -a v0.1.0-docker -m "Adds Docker-based LAMMPS wrappers paired with example-superscientist v0.1.0"
+git tag -a v0.1.0-docker -m "Adds Docker-based LAMMPS wrappers paired with examples-superscientist v0.1.0"
 git push origin v0.1.0-docker
 ```
 
@@ -1036,14 +1046,14 @@ git push origin v0.1.0-docker
 After all tasks complete, verify against the spec:
 
 - [ ] **Spec coverage:**
-  - [ ] `example-superscientist` repo exists with Dockerfile, environment.yml, both lockfiles, smoke-test.lmp, CI workflow, README, LICENSE (Tasks 1-9)
-  - [ ] Image published to `ghcr.io/<owner>/example-superscientist` with `:latest`, `:sha-<short>`, `:v0.1.0` tags (Tasks 8-9)
+  - [ ] `examples-superscientist` repo exists with Dockerfile, environment.yml, both lockfiles, smoke-test.lmp, CI workflow, README, LICENSE (Tasks 1-9)
+  - [ ] Image published to `ghcr.io/Chenghao-Wu/examples-superscientist` with `:latest`, `:sha-<short>`, `:v0.1.0` tags (Tasks 8-9)
   - [ ] Image is multi-arch (linux/amd64 + linux/arm64) — confirmed by Task 6 step 7 + Task 8 step 4 on both runners
   - [ ] CI runs lockfile-drift check (Task 7) — fails if `conda-lock` produces a diff
   - [ ] CI runs smoke test on both arches (Task 7)
   - [ ] Wrappers in `superscientist/bin/` for `lmp`, `lmp-python`, `lmp-shell` (Tasks 10-12)
   - [ ] Each wrapper handles missing docker (Task 10 step 5)
-  - [ ] Each wrapper honors `EXAMPLE_SUPERSCIENTIST_IMAGE` (Task 10 step 6)
+  - [ ] Each wrapper honors `EXAMPLES_SUPERSCIENTIST_IMAGE` (Task 10 step 6)
   - [ ] Each wrapper bind-mounts `$PWD` and sets `--user $UID:$GID` (visible in the scripts)
   - [ ] README in superscientist explains usage (Task 13)
   - [ ] End-to-end check on a clean PATH works (Task 14)
